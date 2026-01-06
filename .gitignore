@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# プロジェクト固有
+*.xlsx
+*.xls
+data/raw/*.csv
+data/*.xlsx
+data/*.xls
+
+# ただし、必須のCSVファイルは除外しない
+!data/birth_by_city.csv
+!data/high_school_rate.csv
+!data/university_rate.csv
+!data/hokkaido_university_destinations.csv
+!data/workers_by_industry.csv
+!data/retirement_age.csv
+!data/death_by_age.csv
+!data/death_by_cause.csv
+
