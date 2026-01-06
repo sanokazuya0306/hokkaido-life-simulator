@@ -56,8 +56,8 @@ class HokkaidoLifeSimulator:
                 for row in reader:
                     city = row.get("市町村", "").strip()
                     birth_count = int(row.get("出生数", 0))
-                    # 「北海道」や「北　海　道」などの総計行をスキップ
-                    if city and birth_count > 0 and city not in ["北海道", "北　海　道", "全道", "全道計"]:
+                    # 「北海道」や「北　海　道」などの総計行、および「札幌市」全体をスキップ（区のデータを使用）
+                    if city and birth_count > 0 and city not in ["北海道", "北　海　道", "全道", "全道計", "札幌市"]:
                         self.birth_data.append({"city": city, "count": birth_count})
         else:
             print(f"警告: {birth_file} が見つかりません。サンプルデータを使用します。", file=sys.stderr)
@@ -210,9 +210,17 @@ class HokkaidoLifeSimulator:
         for item in self.birth_data:
             cumulative += item["count"]
             if rand <= cumulative:
-                return item["city"]
+                city = item["city"]
+                # 札幌市の区を「札幌市○○区」の形式に変換
+                if city.endswith("区") and "市" not in city:
+                    city = f"札幌市{city}"
+                return city
         
-        return self.birth_data[-1]["city"]
+        # 最後の要素も同様に処理
+        city = self.birth_data[-1]["city"]
+        if city.endswith("区") and "市" not in city:
+            city = f"札幌市{city}"
+        return city
     
     def decide_high_school(self, city):
         """高校進学を決定"""
