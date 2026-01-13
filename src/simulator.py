@@ -89,13 +89,55 @@ class HokkaidoLifeSimulator:
         university_destination = self.education_sim.select_university_destination() if went_to_university else None
         university_name = self.education_sim.select_university_name(university_destination) if went_to_university and university_destination else None
         
-        # キャリア
-        industry = self.career_sim.select_industry(gender)
+        # 就業開始年齢を計算
+        if went_to_university:
+            start_work_age = 22  # 大卒
+        elif went_to_high_school:
+            start_work_age = 18  # 高卒
+        else:
+            start_work_age = 15  # 中卒
+        
+        # 定年年齢
         retirement_age = self.career_sim.select_retirement_age()
         
         # 死亡
         death_age = self.death_sim.select_death_age()
         death_cause = self.death_sim.select_death_cause()
+        
+        # 最初の就職先産業
+        first_industry = self.career_sim.select_industry(gender)
+        
+        # キャリア履歴をシミュレーション
+        # 終了年齢は定年または死亡の早い方
+        if retirement_age is not None:
+            career_end_age = min(retirement_age, death_age)
+        else:
+            # 定年なしの場合は死亡年齢まで（ただし75歳を上限とする）
+            career_end_age = min(75, death_age)
+        
+        # 就業開始年齢が終了年齢より前の場合のみキャリア履歴を生成
+        if start_work_age < career_end_age:
+            career_history = self.career_sim.simulate_career_history(
+                gender=gender,
+                start_age=start_work_age,
+                end_age=career_end_age,
+                first_industry=first_industry,
+            )
+            career_summary = self.career_sim.get_career_summary(career_history)
+        else:
+            career_history = []
+            career_summary = {
+                "total_job_changes": 0,
+                "total_separations": 0,
+                "total_reemployments": 0,
+                "total_companies": 0,
+                "total_unemployment_years": 0,
+                "final_employment_status": "未就業",
+                "final_industry": None,
+            }
+        
+        # 最終的な産業（キャリア履歴がある場合はそこから、なければ最初の産業）
+        final_industry = career_summary.get("final_industry") or first_industry
         
         return {
             "gender": gender,
@@ -107,7 +149,11 @@ class HokkaidoLifeSimulator:
             "university": went_to_university,
             "university_destination": university_destination,
             "university_name": university_name,
-            "industry": industry,
+            "start_work_age": start_work_age,
+            "industry": final_industry,  # 後方互換性のため残す（最終的な産業）
+            "first_industry": first_industry,  # 最初の就職先
+            "career_history": career_history,  # キャリア履歴
+            "career_summary": career_summary,  # キャリアサマリー
             "retirement_age": retirement_age,
             "death_age": death_age,
             "death_cause": death_cause,
