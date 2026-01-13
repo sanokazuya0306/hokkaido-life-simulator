@@ -8,6 +8,8 @@
 - university_rate.csv: 市町村別の大学進学率
 - hokkaido_university_destinations.csv: 大学進学先の都道府県
 - workers_by_industry.csv: 産業別の労働者数
+- workers_by_gender.csv: 性別別の労働者数（令和6年労働力調査）
+- workers_by_industry_gender.csv: 性別×産業別の労働者数
 - retirement_age.csv: 定年年齢の分布
 - death_by_age.csv: 年齢別の死亡者数
 - death_by_cause.csv: 死因別の死亡者数
@@ -40,6 +42,8 @@ class HokkaidoLifeSimulator:
         self.university_rates = {}
         self.university_destinations = []
         self.workers_by_industry = []
+        self.workers_by_gender = {}  # 性別別の労働者割合
+        self.workers_by_industry_gender = {}  # 性別×産業別の労働者数
         self.retirement_age_distribution = []
         self.death_by_age = []
         self.death_by_cause = []
@@ -176,6 +180,37 @@ class HokkaidoLifeSimulator:
                 {"cause": "脳血管疾患", "count": 5000},
             ]
         
+        # 性別別労働者数データ（令和6年労働力調査）
+        workers_gender_file = self.data_dir / "workers_by_gender.csv"
+        if workers_gender_file.exists():
+            with open(workers_gender_file, "r", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    gender = row.get("性別", "").strip()
+                    workers = int(row.get("就業者数", 0))
+                    if gender and gender != "合計" and workers > 0:
+                        self.workers_by_gender[gender] = workers
+        else:
+            print(f"警告: {workers_gender_file} が見つかりません。デフォルト値を使用します。", file=sys.stderr)
+            # 令和6年労働力調査のデフォルト値
+            self.workers_by_gender = {"男性": 1430000, "女性": 1210000}
+        
+        # 性別×産業別労働者数データ
+        workers_industry_gender_file = self.data_dir / "workers_by_industry_gender.csv"
+        if workers_industry_gender_file.exists():
+            with open(workers_industry_gender_file, "r", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    industry = row.get("産業", "").strip()
+                    male = int(row.get("男性", 0))
+                    female = int(row.get("女性", 0))
+                    if industry and (male > 0 or female > 0):
+                        self.workers_by_industry_gender[industry] = {"男性": male, "女性": female}
+        else:
+            print(f"警告: {workers_industry_gender_file} が見つかりません。デフォルト値を使用します。", file=sys.stderr)
+            # 性別データがない場合は全国傾向に基づくデフォルト値
+            self.workers_by_industry_gender = {}
+        
         # 定年年齢データ
         retirement_age_file = self.data_dir / "retirement_age.csv"
         if retirement_age_file.exists():
@@ -253,8 +288,50 @@ class HokkaidoLifeSimulator:
         
         return self.university_destinations[-1]["prefecture"]
     
-    def select_industry(self):
-        """就職先の産業をランダムに選択（労働者数に基づく重み付き選択）"""
+    def select_gender(self):
+        """性別をランダムに選択（労働者数に基づく重み付き選択）"""
+        if not self.workers_by_gender:
+            return random.choice(["男性", "女性"])
+        
+        total = sum(self.workers_by_gender.values())
+        if total == 0:
+            return random.choice(["男性", "女性"])
+        
+        rand = random.uniform(0, total)
+        cumulative = 0
+        for gender, count in self.workers_by_gender.items():
+            cumulative += count
+            if rand <= cumulative:
+                return gender
+        
+        return "男性"
+    
+    def select_industry(self, gender=None):
+        """就職先の産業をランダムに選択（労働者数に基づく重み付き選択）
+        
+        Args:
+            gender: 性別（指定された場合、性別に応じた産業分布を使用）
+        """
+        # 性別が指定されていて、性別×産業データがある場合
+        if gender and self.workers_by_industry_gender:
+            industry_weights = []
+            for industry, gender_data in self.workers_by_industry_gender.items():
+                count = gender_data.get(gender, 0)
+                if count > 0:
+                    industry_weights.append({"industry": industry, "count": count})
+            
+            if industry_weights:
+                total_workers = sum(item["count"] for item in industry_weights)
+                if total_workers > 0:
+                    rand = random.uniform(0, total_workers)
+                    cumulative = 0
+                    for item in industry_weights:
+                        cumulative += item["count"]
+                        if rand <= cumulative:
+                            return item["industry"]
+                    return industry_weights[-1]["industry"]
+        
+        # 性別データがない場合は従来の全体データを使用
         if not self.workers_by_industry:
             return "不明"
         
@@ -341,17 +418,26 @@ class HokkaidoLifeSimulator:
     
     def generate_life(self):
         """1人の人生を生成"""
+        gender = self.select_gender()
         birth_city = self.select_birth_city()
+        
+        # 両親の職業を生成（性別に応じた産業分布から選択）
+        father_industry = self.select_industry("男性")
+        mother_industry = self.select_industry("女性")
+        
         went_to_high_school = self.decide_high_school(birth_city)
         went_to_university = self.decide_university(birth_city, went_to_high_school)
         university_destination = self.select_university_destination() if went_to_university else None
-        industry = self.select_industry()
+        industry = self.select_industry(gender)  # 性別に応じた産業選択
         retirement_age = self.select_retirement_age()
         death_age = self.select_death_age()
         death_cause = self.select_death_cause()
         
         return {
+            "gender": gender,
             "birth_city": birth_city,
+            "father_industry": father_industry,
+            "mother_industry": mother_industry,
             "high_school": went_to_high_school,
             "university": went_to_university,
             "university_destination": university_destination,
@@ -363,8 +449,16 @@ class HokkaidoLifeSimulator:
     
     def format_life(self, life):
         """人生の軌跡を文字列でフォーマット"""
-        # 出生地（市町村名）
+        # 出生地（市町村名）と両親の職業
         birth_city = life['birth_city']
+        father_industry = life.get('father_industry', '不明')
+        mother_industry = life.get('mother_industry', '不明')
+        
+        # 出生地の整形（「札幌市○○区」は「北海道札幌市○○区」、それ以外は「北海道○○市」など）
+        if "北海道" not in birth_city:
+            birth_location = f"北海道{birth_city}"
+        else:
+            birth_location = birth_city
         
         # 進学の表示
         education_parts = []
@@ -405,7 +499,7 @@ class HokkaidoLifeSimulator:
         
         # 最終的な出力（定年情報がある場合のみ含める）
         parts = [
-            f"{birth_city}で生まれる",
+            f"{birth_location}に、{father_industry}の父親と{mother_industry}の母親の元に生まれる",
             education_str,
             job_str
         ]
@@ -493,21 +587,36 @@ def main():
                 "count": f"{len(simulator.workers_by_industry)}産業"
             },
             {
-                "name": "6. 定年年齢分布",
+                "name": "6. 性別別労働者数",
+                "official_name": "労働力調査（令和6年平均）",
+                "source": "北海道総合政策部計画局統計課",
+                "year": "2024年",
+                "count": f"{len(simulator.workers_by_gender)}区分",
+                "url": "https://www.pref.hokkaido.lg.jp/ss/tuk/030lfs/212917.html"
+            },
+            {
+                "name": "7. 性別×産業別労働者数",
+                "official_name": "労働力調査（令和6年平均）+ 全国傾向から推定",
+                "source": "北海道総合政策部計画局統計課 / 総務省統計局",
+                "year": "2024年",
+                "count": f"{len(simulator.workers_by_industry_gender)}産業"
+            },
+            {
+                "name": "8. 定年年齢分布",
                 "official_name": "就労条件総合調査結果の概況（令和4年）",
                 "source": "厚生労働省",
                 "year": "2022年",
                 "count": f"{len(simulator.retirement_age_distribution)}区分"
             },
             {
-                "name": "7. 年齢別死亡者数",
+                "name": "9. 年齢別死亡者数",
                 "official_name": "北海道保健統計年報 第24表 死亡数（令和4年）",
                 "source": "北海道保健福祉部総務課",
                 "year": "2022年",
                 "count": f"{len(simulator.death_by_age)}年齢"
             },
             {
-                "name": "8. 死因別死亡者数",
+                "name": "10. 死因別死亡者数",
                 "official_name": "北海道保健統計年報 表3 死亡数・死亡率（令和4年）",
                 "source": "北海道保健福祉部総務課",
                 "year": "2022年",
