@@ -95,11 +95,7 @@ class LifeFormatter:
                         career_parts.append(f"中学卒業後、{industry}に就職")
                 
                 elif event_type == "転職":
-                    prev_industry = event.get("previous_industry", "")
-                    if prev_industry and prev_industry != industry:
-                        career_parts.append(f"{age}歳で{industry}に転職")
-                    else:
-                        career_parts.append(f"{age}歳で転職（{event.get('company_number', '')}社目）")
+                    career_parts.append(f"{age}歳で転職")
                 
                 elif event_type == "離職":
                     career_parts.append(f"{age}歳で離職")
@@ -107,9 +103,9 @@ class LifeFormatter:
                 elif event_type == "再就職":
                     unemployment_duration = event.get("unemployment_duration", 0)
                     if unemployment_duration > 0:
-                        career_parts.append(f"{age}歳で{industry}に再就職（無職期間{unemployment_duration}年）")
+                        career_parts.append(f"{unemployment_duration}年間の無職ののち、{age}歳で再就職")
                     else:
-                        career_parts.append(f"{age}歳で{industry}に再就職")
+                        career_parts.append(f"{age}歳で再就職")
         else:
             # キャリア履歴がない場合（後方互換性）
             industry = life.get('industry', '不明')
@@ -182,20 +178,25 @@ class LifeFormatter:
         lines.append(f"【人生スコア】 {score_result['total_score']:.1f} / 100点")
         lines.append("=" * 60)
         lines.append("※ 東京で生まれ育ち最大限に充実した人生を100点として算出")
+        lines.append("※ 各要素の幾何平均で計算（掛け算方式）")
         lines.append("")
         
         breakdown = score_result["breakdown"]
-        weights = score_result["weights"]
         
         lines.append("【スコア内訳】")
         lines.append("-" * 60)
         
         for key in ["location", "gender", "education", "university_dest", "industry", "lifespan", "death_cause"]:
             item = breakdown[key]
-            weight = weights[key]
-            weighted_score = item["score"] * weight
+            score = item["score"]
             
-            lines.append(f"  {item['label']}: {item['score']}点 × {weight*100:.0f}% = {weighted_score:.1f}点")
+            # 計算に含まれるかどうかを表示
+            if item.get("include_in_calc") == False:
+                calc_note = "（計算対象外）"
+            else:
+                calc_note = ""
+            
+            lines.append(f"  {item['label']}: {score}点 {calc_note}")
             lines.append(f"    → {item['value']}")
             
             if verbose:
@@ -205,21 +206,23 @@ class LifeFormatter:
             lines.append("")
         
         lines.append("-" * 60)
-        lines.append(f"合計: {score_result['total_score']:.1f}点")
+        lines.append(f"総合スコア: {score_result['total_score']:.1f}点")
         lines.append("")
         
-        # スコアの解釈
+        # スコアの解釈（掛け算方式用に調整）
         total = score_result['total_score']
-        if total >= 80:
-            interpretation = "非常に恵まれた人生（上位10%相当）"
-        elif total >= 65:
+        if total >= 75:
+            interpretation = "非常に恵まれた人生（上位5%相当）"
+        elif total >= 60:
             interpretation = "平均以上の充実した人生"
-        elif total >= 50:
+        elif total >= 45:
             interpretation = "平均的な人生"
-        elif total >= 35:
+        elif total >= 30:
             interpretation = "やや困難の多い人生"
-        else:
+        elif total >= 15:
             interpretation = "多くの困難に直面した人生"
+        else:
+            interpretation = "極めて厳しい人生"
         
         lines.append(f"【評価】 {interpretation}")
         

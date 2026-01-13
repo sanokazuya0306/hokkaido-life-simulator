@@ -2,6 +2,7 @@
 スコア計算モジュール
 
 人生データからスコアを計算する
+掛け算方式: 各要素を掛け合わせることで、地域格差が如実に反映される
 """
 
 from typing import Dict, Any
@@ -13,7 +14,6 @@ from .constants import (
     UNIVERSITY_DESTINATION_SCORES,
     INDUSTRY_SALARY_SCORES,
     DEATH_CAUSE_SCORES,
-    SCORE_WEIGHTS,
     get_lifespan_score,
 )
 
@@ -26,6 +26,9 @@ class LifeScorer:
         人生のスコアを計算する（0〜100点）
         東京で生まれ育って最大限に充実した人生を100点とする
         
+        掛け算方式: 各要素の割合を掛け合わせて最終スコアを算出
+        これにより、どこか1つが低いと全体が大きく下がる
+        
         Args:
             life: generate_life()で生成された人生データ
             
@@ -34,9 +37,10 @@ class LifeScorer:
         """
         scores = {}
         
-        # 1. 出生地スコア（北海道内なので一律）
+        # 1. 出生地スコア（北海道内なので一律54%）
+        location_score = LOCATION_SCORES["北海道"]
         scores["location"] = {
-            "score": LOCATION_SCORES["北海道"],
+            "score": location_score,
             "max_score": 100,
             "label": "出生地",
             "value": life["birth_city"],
@@ -74,7 +78,7 @@ class LifeScorer:
             "source": "労働政策研究・研修機構「ユースフル労働統計」"
         }
         
-        # 4. 大学進学先スコア（大学進学者のみ）
+        # 4. 大学進学先スコア（大学進学者のみ計算に含める）
         if life["university"] and life.get("university_destination"):
             dest = life["university_destination"]
             dest_score = UNIVERSITY_DESTINATION_SCORES.get(dest, UNIVERSITY_DESTINATION_SCORES["default"])
@@ -84,17 +88,19 @@ class LifeScorer:
                 "label": "大学進学先",
                 "value": dest,
                 "reason": f"{dest}の大学（産業集積度・求人倍率に基づく）",
-                "source": "文部科学省「学校基本調査」"
+                "source": "文部科学省「学校基本調査」",
+                "include_in_calc": True,
             }
         else:
-            # 大学に行かなかった場合は0点（重みが低いので影響は限定的）
+            # 大学に行かなかった場合は計算から除外
             scores["university_dest"] = {
                 "score": 0,
                 "max_score": 100,
                 "label": "大学進学先",
                 "value": "進学せず",
-                "reason": "大学に進学しなかった",
-                "source": "-"
+                "reason": "大学に進学しなかった（スコア計算から除外）",
+                "source": "-",
+                "include_in_calc": False,
             }
         
         # 5. 就職産業スコア
@@ -166,20 +172,49 @@ class LifeScorer:
             "source": "厚生労働省「人口動態統計」"
         }
         
-        # 総合スコアの計算（重み付き平均）
-        total_score = 0
-        for key, weight in SCORE_WEIGHTS.items():
-            total_score += scores[key]["score"] * weight
+        # ============================================================
+        # 掛け算方式でスコア計算
+        # 各要素を100点満点に対する割合として掛け合わせる
+        # ============================================================
+        
+        # 基本要素（必ず計算に含める）
+        multipliers = [
+            location_score / 100,      # 出生地
+            gender_score / 100,        # 性別
+            education_score / 100,     # 学歴
+            industry_score / 100,      # 産業
+            lifespan_score / 100,      # 寿命
+            death_cause_score / 100,   # 死因
+        ]
+        
+        # 大学進学先（大卒の場合のみ）
+        if scores["university_dest"].get("include_in_calc", False):
+            multipliers.append(scores["university_dest"]["score"] / 100)
+        
+        # 掛け算で最終スコアを計算
+        # 全て100点なら 1.0 × 1.0 × ... = 1.0 → 100点
+        product = 1.0
+        for m in multipliers:
+            product *= m
+        
+        # 0〜1の範囲を0〜100に変換
+        # ただし、掛け算だと数値が小さくなりすぎるので、
+        # 要素数のルートを取ってスケーリング調整
+        num_factors = len(multipliers)
+        # 幾何平均を使用: (a × b × c × ...)^(1/n) × 100
+        geometric_mean = product ** (1 / num_factors)
+        total_score = geometric_mean * 100
         
         return {
             "total_score": round(total_score, 1),
             "breakdown": scores,
-            "weights": SCORE_WEIGHTS,
+            "calculation_method": "geometric_mean",  # 計算方式を記録
+            "num_factors": num_factors,
         }
     
     def get_score_interpretation(self, total_score: float) -> str:
         """
-        スコアの解釈を返す
+        スコアの解釈を返す（掛け算方式用に調整）
         
         Args:
             total_score: 総合スコア
@@ -187,13 +222,15 @@ class LifeScorer:
         Returns:
             解釈文字列
         """
-        if total_score >= 80:
-            return "非常に恵まれた人生（上位10%相当）"
-        elif total_score >= 65:
+        if total_score >= 75:
+            return "非常に恵まれた人生（上位5%相当）"
+        elif total_score >= 60:
             return "平均以上の充実した人生"
-        elif total_score >= 50:
+        elif total_score >= 45:
             return "平均的な人生"
-        elif total_score >= 35:
+        elif total_score >= 30:
             return "やや困難の多い人生"
-        else:
+        elif total_score >= 15:
             return "多くの困難に直面した人生"
+        else:
+            return "極めて厳しい人生"

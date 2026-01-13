@@ -5,7 +5,7 @@
 
 import streamlit as st
 import pandas as pd
-from hokkaido_life_simulator import HokkaidoLifeSimulator
+from src import HokkaidoLifeSimulator
 from career_simulation import CareerSimulator
 
 # ページ設定
@@ -176,22 +176,25 @@ if st.session_state.lives:
                 score_result = simulator.calculate_life_score(life)
                 total_score = score_result['total_score']
                 
-                # スコアの解釈
-                if total_score >= 80:
-                    interpretation = "非常に恵まれた人生（上位10%相当）"
+                # スコアの解釈（掛け算方式用）
+                if total_score >= 75:
+                    interpretation = "非常に恵まれた人生（上位5%相当）"
                     score_color = "🟢"
-                elif total_score >= 65:
+                elif total_score >= 60:
                     interpretation = "平均以上の充実した人生"
                     score_color = "🔵"
-                elif total_score >= 50:
+                elif total_score >= 45:
                     interpretation = "平均的な人生"
                     score_color = "🟡"
-                elif total_score >= 35:
+                elif total_score >= 30:
                     interpretation = "やや困難の多い人生"
                     score_color = "🟠"
-                else:
+                elif total_score >= 15:
                     interpretation = "多くの困難に直面した人生"
                     score_color = "🔴"
+                else:
+                    interpretation = "極めて厳しい人生"
+                    score_color = "⚫"
                 
                 st.markdown(f"""
                 <div style="background-color: #e8f4f8; padding: 1rem; border-radius: 10px; margin: 1rem 0;">
