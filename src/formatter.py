@@ -70,85 +70,63 @@ class LifeFormatter:
             education_parts.append(f"{high_school_name}に進学")
         
         if life["university"] and life.get("university_destination"):
-            university_name = life.get("university_name", f"{life['university_destination']}の大学")
-            education_parts.append(f"{university_name}に進学")
+            university_dest = life["university_destination"]
+            university_name = life.get("university_name", f"{university_dest}の大学")
+            education_parts.append(f"{university_dest}の{university_name}に進学")
         
         education_str = "\n".join(education_parts) if education_parts else "中学卒業"
         
-        # キャリア履歴の表示
-        career_parts = []
-        career_history = life.get("career_history", [])
-        
-        if career_history:
-            for event in career_history:
-                event_type = event.get("type")
-                age = event.get("age")
-                industry = event.get("industry", "")
-                
-                if event_type == "就職":
-                    # 最初の就職
-                    if life["university"]:
-                        career_parts.append(f"大学卒業後、{industry}に就職")
-                    elif life["high_school"]:
-                        career_parts.append(f"高校卒業後、{industry}に就職")
-                    else:
-                        career_parts.append(f"中学卒業後、{industry}に就職")
-                
-                elif event_type == "転職":
-                    career_parts.append(f"{age}歳で転職")
-                
-                elif event_type == "離職":
-                    career_parts.append(f"{age}歳で離職")
-                
-                elif event_type == "再就職":
-                    unemployment_duration = event.get("unemployment_duration", 0)
-                    if unemployment_duration > 0:
-                        career_parts.append(f"{unemployment_duration}年間の無職ののち、{age}歳で再就職")
-                    else:
-                        career_parts.append(f"{age}歳で再就職")
+        # 最初の就職の表示
+        first_industry = life.get('first_industry') or life.get('industry', '不明')
+        if life["university"]:
+            job_str = f"大学卒業後、{first_industry}に就職"
+        elif life["high_school"]:
+            job_str = f"高校卒業後、{first_industry}に就職"
         else:
-            # キャリア履歴がない場合（後方互換性）
-            industry = life.get('industry', '不明')
-            if life["university"]:
-                career_parts.append(f"大学卒業後、{industry}に就職")
-            elif life["high_school"]:
-                career_parts.append(f"高校卒業後、{industry}に就職")
-            else:
-                career_parts.append(f"中学卒業後、{industry}に就職")
+            job_str = f"中学卒業後、{first_industry}に就職"
         
-        career_str = "\n".join(career_parts)
+        # キャリアサマリーから転職回数と無職年数を取得
+        career_summary = life.get("career_summary", {})
+        job_changes = career_summary.get("total_job_changes", 0)
+        unemployment_years = career_summary.get("total_unemployment_years", 0)
+        
+        # 転職・無職のプレフィックスを作成
+        career_prefix_parts = []
+        if job_changes > 0:
+            career_prefix_parts.append(f"{job_changes}回の転職")
+        if unemployment_years > 0:
+            career_prefix_parts.append(f"{unemployment_years}年の無職")
+        
+        career_prefix = "、".join(career_prefix_parts)
+        if career_prefix:
+            career_prefix += "を経て、"
         
         # 定年の表示
         retirement_age = life.get('retirement_age')
         death_age = life['death_age']
-        
-        retirement_str = None
-        # キャリアサマリーから最終状態を確認
-        career_summary = life.get("career_summary", {})
-        final_status = career_summary.get("final_employment_status", "就業中")
-        
-        if retirement_age is not None and death_age >= retirement_age:
-            if final_status == "就業中":
-                retirement_str = f"{retirement_age}歳で定年退職"
-            else:
-                # 無職のまま定年を迎えた場合は表示しない
-                pass
-        elif retirement_age is None and death_age >= 60:
-            if final_status == "就業中":
-                retirement_str = "定年なし（生涯現役）"
         
         # 死因の表示
         death_cause = life['death_cause']
         if "悪性新生物" in death_cause or "腫瘍" in death_cause:
             death_cause = "ガン"
         
-        death_str = f"{life['death_age']}歳で{death_cause}により死亡"
+        # 定年退職できたか、その前に死亡したかで表示を分ける
+        retirement_str = None
+        death_str = None
+        
+        if retirement_age is not None and death_age >= retirement_age:
+            # 定年退職できた場合
+            retirement_str = f"{career_prefix}{retirement_age}歳で定年退職"
+            death_str = f"{death_age}歳で{death_cause}により死亡"
+        else:
+            # 定年前に死亡した場合
+            death_str = f"{career_prefix}{death_age}歳で{death_cause}により死亡"
         
         # 最終的な出力
         parts = [
             f"{birth_location}に{gender}として、{father_industry}の父親と{mother_industry}の母親の元に生まれる",
             education_str,
-            career_str
+            job_str
         ]
         
         if retirement_str:
@@ -206,18 +184,41 @@ class LifeFormatter:
             lines.append("")
         
         lines.append("-" * 60)
+        
+        # スコア計算式を表示
+        lines.append("【スコア計算】")
+        calc_items = []
+        for key in ["location", "gender", "education", "university_dest", "industry", "lifespan", "death_cause"]:
+            item = breakdown[key]
+            if item.get("include_in_calc") != False:
+                calc_items.append((item['label'], item['score']))
+        
+        # 計算式の表示
+        calc_formula = " × ".join([f"{label}({score}%)" for label, score in calc_items])
+        lines.append(f"  {calc_formula}")
+        
+        # 実際の計算
+        product = 1.0
+        for _, score in calc_items:
+            product *= score / 100
+        
+        lines.append(f"  = {product:.6f}")
+        lines.append(f"  √({product:.6f}) × 100 = {(product ** 0.5) * 100:.1f}点")
+        lines.append("")
+        
+        lines.append("-" * 60)
         lines.append(f"総合スコア: {score_result['total_score']:.1f}点")
         lines.append("")
         
         # スコアの解釈（掛け算方式用に調整）
         total = score_result['total_score']
-        if total >= 75:
+        if total >= 60:
             interpretation = "非常に恵まれた人生（上位5%相当）"
-        elif total >= 60:
-            interpretation = "平均以上の充実した人生"
         elif total >= 45:
+            interpretation = "平均以上の充実した人生"
+        elif total >= 35:
             interpretation = "平均的な人生"
-        elif total >= 30:
+        elif total >= 25:
             interpretation = "やや困難の多い人生"
         elif total >= 15:
             interpretation = "多くの困難に直面した人生"

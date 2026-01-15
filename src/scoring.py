@@ -15,6 +15,8 @@ from .constants import (
     INDUSTRY_SALARY_SCORES,
     DEATH_CAUSE_SCORES,
     get_lifespan_score,
+    get_university_rank,
+    get_university_rank_score,
 )
 
 
@@ -103,6 +105,35 @@ class LifeScorer:
                 "include_in_calc": False,
             }
         
+        # 4.5. 大学ランクスコア（大学進学者のみ計算に含める）
+        if life["university"] and life.get("university_name"):
+            uni_name = life["university_name"]
+            uni_rank = get_university_rank(uni_name)
+            uni_rank_score = get_university_rank_score(uni_name)
+            
+            rank_labels = {"S": "難関", "A": "上位", "B": "中堅", "C": "標準", "D": "その他"}
+            rank_label = rank_labels.get(uni_rank, "標準")
+            
+            scores["university_rank"] = {
+                "score": uni_rank_score,
+                "max_score": 100,
+                "label": "大学ランク",
+                "value": f"{uni_name}（{rank_label}）",
+                "reason": f"偏差値ランク{uni_rank}（{rank_label}大学）",
+                "source": "大学偏差値ランキング",
+                "include_in_calc": True,
+            }
+        else:
+            scores["university_rank"] = {
+                "score": 0,
+                "max_score": 100,
+                "label": "大学ランク",
+                "value": "進学せず",
+                "reason": "大学に進学しなかった（スコア計算から除外）",
+                "source": "-",
+                "include_in_calc": False,
+            }
+        
         # 5. 就職産業スコア
         industry = life["industry"]
         # 産業名の部分一致でスコアを取得
@@ -173,48 +204,64 @@ class LifeScorer:
         }
         
         # ============================================================
-        # 掛け算方式でスコア計算
-        # 各要素を100点満点に対する割合として掛け合わせる
+        # 加重平均方式でスコア計算（平均50〜60点になるよう調整）
+        # 各要素の重みを考慮して合計
         # ============================================================
         
-        # 基本要素（必ず計算に含める）
-        multipliers = [
-            location_score / 100,      # 出生地
-            gender_score / 100,        # 性別
-            education_score / 100,     # 学歴
-            industry_score / 100,      # 産業
-            lifespan_score / 100,      # 寿命
-            death_cause_score / 100,   # 死因
+        # 基本要素のスコアと重み
+        # 出生地（平均54）の重みを上げて全体平均を下げる
+        # 産業（平均62）の重みも上げる
+        base_scores = [
+            (location_score, 0.25),      # 出生地（北海道は54点）- 最重要要素
+            (gender_score, 0.05),        # 性別（女性は76点）- 影響を軽減
+            (education_score, 0.10),     # 学歴（中卒60、高卒75、大卒100）
+            (industry_score, 0.20),      # 産業（飲食45〜IT100）
+            (lifespan_score, 0.20),      # 寿命（30歳以下0〜90歳以上100）
+            (death_cause_score, 0.10),   # 死因（自殺20〜老衰100）
         ]
         
-        # 大学進学先（大卒の場合のみ）
+        # 大学関連スコア（大卒の場合のみ）
         if scores["university_dest"].get("include_in_calc", False):
-            multipliers.append(scores["university_dest"]["score"] / 100)
+            base_scores.append((scores["university_dest"]["score"], 0.05))
+        if scores["university_rank"].get("include_in_calc", False):
+            base_scores.append((scores["university_rank"]["score"], 0.05))
         
-        # 掛け算で最終スコアを計算
-        # 全て100点なら 1.0 × 1.0 × ... = 1.0 → 100点
-        product = 1.0
-        for m in multipliers:
-            product *= m
+        # 重みを正規化（大卒でない場合、他の要素の重みを増やす）
+        total_weight = sum(weight for _, weight in base_scores)
         
-        # 0〜1の範囲を0〜100に変換
-        # ただし、掛け算だと数値が小さくなりすぎるので、
-        # 要素数のルートを取ってスケーリング調整
-        num_factors = len(multipliers)
-        # 幾何平均を使用: (a × b × c × ...)^(1/n) × 100
-        geometric_mean = product ** (1 / num_factors)
-        total_score = geometric_mean * 100
+        # 加重平均でスコアを計算
+        weighted_sum = sum(score * weight for score, weight in base_scores)
+        base_score = weighted_sum / total_weight
+        
+        # スケーリング調整
+        # 目標分布:
+        # - 北海道の典型的なケース: 50〜60点
+        # - 頑張れば: 70〜80点
+        # - 最良ケース: 90点以上も稀に出る（0.5〜1%）
+        # - 最悪ケース: 20〜30点
+        #
+        # base_scoreの実測分布: 平均70点、範囲50-85点程度
+        # これを平均55点、範囲20-100点に変換
+        # 変換式: (base_score - 70) * 3.0 + 55
+        # base=50 → -5点→20点、base=70 → 55点、base=80 → 85点、base=85→100点
+        if base_score <= 0:
+            total_score = 0
+        else:
+            # 線形変換: 中央を55点に、分布を3倍に広げる
+            adjusted = (base_score - 70) * 3.0 + 55
+            # 最低20点、最高100点に制限
+            total_score = max(20, min(100, adjusted))
         
         return {
             "total_score": round(total_score, 1),
             "breakdown": scores,
-            "calculation_method": "geometric_mean",  # 計算方式を記録
-            "num_factors": num_factors,
+            "calculation_method": "weighted_average",  # 計算方式を記録
+            "num_factors": len(base_scores),
         }
     
     def get_score_interpretation(self, total_score: float) -> str:
         """
-        スコアの解釈を返す（掛け算方式用に調整）
+        スコアの解釈を返す（app.pyのランク基準に合わせて調整）
         
         Args:
             total_score: 総合スコア
@@ -222,15 +269,15 @@ class LifeScorer:
         Returns:
             解釈文字列
         """
-        if total_score >= 75:
-            return "非常に恵まれた人生（上位5%相当）"
+        if total_score >= 90:
+            return "素晴らしい人生！（上位1%相当）"
+        elif total_score >= 80:
+            return "とても充実した人生（上位5%相当）"
+        elif total_score >= 70:
+            return "平均以上の良い人生"
         elif total_score >= 60:
-            return "平均以上の充実した人生"
-        elif total_score >= 45:
             return "平均的な人生"
         elif total_score >= 30:
-            return "やや困難の多い人生"
-        elif total_score >= 15:
-            return "多くの困難に直面した人生"
+            return "いろいろあった人生"
         else:
-            return "極めて厳しい人生"
+            return "波乱万丈の人生"

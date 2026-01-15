@@ -1103,25 +1103,44 @@ class HokkaidoLifeSimulator:
         else:
             job_str = f"中学卒業後に{industry}に就職"
         
+        # キャリアサマリーから転職回数と無職年数を取得
+        career_summary = life.get('career_summary', {})
+        job_changes = career_summary.get('total_job_changes', 0)
+        unemployment_years = career_summary.get('total_unemployment_years', 0)
+        
+        # 転職・無職のプレフィックスを作成
+        career_prefix_parts = []
+        if job_changes > 0:
+            career_prefix_parts.append(f"{job_changes}回の転職")
+        if unemployment_years > 0:
+            career_prefix_parts.append(f"{unemployment_years}年の無職")
+        
+        career_prefix = "、".join(career_prefix_parts)
+        if career_prefix:
+            career_prefix += "を経て、"
+        
         # 定年の表示（定年前に死亡した場合は表示しない）
         retirement_age = life.get('retirement_age')
         death_age = life['death_age']
-        
-        retirement_str = None
-        if retirement_age is not None and death_age >= retirement_age:
-            retirement_str = f"{retirement_age}歳で定年退職"
-        elif retirement_age is None and death_age >= 60:
-            # 定年なしの場合、60歳以上で死亡した場合のみ表示
-            retirement_str = "定年なし"
         
         # 死因の表示（「悪性新生物＜腫瘍＞」を「ガン」に変換）
         death_cause = life['death_cause']
         if "悪性新生物" in death_cause or "腫瘍" in death_cause:
             death_cause = "ガン"
         
-        death_str = f"{life['death_age']}歳で{death_cause}により死亡"
+        # 定年退職できたか、その前に死亡したかで表示を分ける
+        retirement_str = None
+        death_str = None
         
-        # 最終的な出力（定年情報がある場合のみ含める）
+        if retirement_age is not None and death_age >= retirement_age:
+            # 定年退職できた場合
+            retirement_str = f"{career_prefix}{retirement_age}歳で定年退職"
+            death_str = f"{death_age}歳で{death_cause}により死亡"
+        else:
+            # 定年前に死亡した場合
+            death_str = f"{career_prefix}{death_age}歳で{death_cause}により死亡"
+        
+        # 最終的な出力
         parts = [
             f"{birth_location}に{gender}として、{father_industry}の父親と{mother_industry}の母親の元に生まれる",
             education_str,

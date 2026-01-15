@@ -36,13 +36,25 @@ class SNSReactionGenerator:
         # 候補となる反応カテゴリを決定
         candidates = []
         
-        # スコアベースの反応
-        if total_score >= 80:
-            candidates.extend(SNS_REACTIONS["high_score"])
-        elif total_score >= 50:
-            candidates.extend(SNS_REACTIONS["mid_score"])
+        # スコアベースの反応（ランク基準）
+        # ★★★★★★ (60点以上): 非常に恵まれた人生
+        # ★★★★★ (45-60点): 平均以上
+        # ★★★★ (35-45点): 平均的
+        # ★★★ (25-35点): やや困難
+        # ★★ (15-25点): 多くの困難
+        # ★ (15点未満): 極めて厳しい
+        if total_score >= 60:
+            candidates.extend(SNS_REACTIONS["rank_6star"])  # ★★★★★★
+        elif total_score >= 45:
+            candidates.extend(SNS_REACTIONS["rank_5star"])  # ★★★★★
+        elif total_score >= 35:
+            candidates.extend(SNS_REACTIONS["rank_4star"])  # ★★★★
+        elif total_score >= 25:
+            candidates.extend(SNS_REACTIONS["rank_3star"])  # ★★★
+        elif total_score >= 15:
+            candidates.extend(SNS_REACTIONS["rank_2star"])  # ★★
         else:
-            candidates.extend(SNS_REACTIONS["low_score"])
+            candidates.extend(SNS_REACTIONS["rank_1star"])  # ★
         
         # 性別ベースの反応
         if life["gender"] == "女性":
@@ -63,6 +75,15 @@ class SNSReactionGenerator:
         elif industry_score <= 50:
             candidates.extend(SNS_REACTIONS["bad_industry"])
         
+        # 転職回数ベースの反応（新規）
+        job_change_count = life.get("job_change_count", 0)
+        if job_change_count >= 4:
+            candidates.extend(SNS_REACTIONS["many_job_changes"])
+        elif job_change_count == 0:
+            candidates.extend(SNS_REACTIONS["no_job_change"])
+        elif job_change_count <= 2:
+            candidates.extend(SNS_REACTIONS["few_job_changes"])
+        
         # 死因ベースの反応
         death_cause = life["death_cause"]
         if "悪性新生物" in death_cause or "腫瘍" in death_cause or "ガン" in death_cause:
@@ -71,10 +92,19 @@ class SNSReactionGenerator:
             candidates.extend(SNS_REACTIONS["death_old_age"])
         elif "不慮" in death_cause or "事故" in death_cause:
             candidates.extend(SNS_REACTIONS["death_accident"])
+        elif "自殺" in death_cause or "自死" in death_cause:
+            candidates.extend(SNS_REACTIONS["death_suicide"])
         
         # 若くして亡くなった場合
-        if life["death_age"] < 50:
+        death_age = life["death_age"]
+        if death_age < 50:
             candidates.extend(SNS_REACTIONS["death_young"])
+        
+        # 長寿関連（新規）
+        if death_age >= 90:
+            candidates.extend(SNS_REACTIONS["long_life"])
+        elif death_age < 65:
+            candidates.extend(SNS_REACTIONS["short_life"])
         
         # 出生地ベースの反応
         if "札幌" in life["birth_city"]:
@@ -82,8 +112,17 @@ class SNSReactionGenerator:
         elif "市" not in life["birth_city"]:
             candidates.extend(SNS_REACTIONS["birth_rural"])
         
-        # 汎用的な反応も追加
-        candidates.extend(SNS_REACTIONS["general"])
+        # 結婚関連（新規）- lifeデータに含まれている場合
+        if "married" in life:
+            if life["married"]:
+                candidates.extend(SNS_REACTIONS["married"])
+            else:
+                candidates.extend(SNS_REACTIONS["unmarried"])
+        
+        # 汎用的な反応をランダムに追加（複数カテゴリからバランスよく）
+        general_categories = ["general_cynical", "general_self_responsibility", "general_detached"]
+        selected_general = random.choice(general_categories)
+        candidates.extend(SNS_REACTIONS[selected_general])
         
         # 重複を除去してシャッフル
         candidates = list(set(candidates))
