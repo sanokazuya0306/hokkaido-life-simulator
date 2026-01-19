@@ -12,6 +12,19 @@ from .constants import SCORE_WEIGHTS
 class LifeFormatter:
     """人生データのフォーマットを担当するクラス"""
     
+    def __init__(self, region: str = "hokkaido"):
+        """
+        初期化
+        
+        Args:
+            region: 地域識別子 ("hokkaido" または "tokyo")
+        """
+        self.region = region
+        self.region_names = {
+            "hokkaido": "北海道",
+            "tokyo": "東京都",
+        }
+    
     def format_life(
         self,
         life: Dict[str, Any],
@@ -49,19 +62,22 @@ class LifeFormatter:
     
     def _format_life_story(self, life: Dict[str, Any]) -> str:
         """人生のストーリー部分をフォーマット"""
-        # 出生地（市町村名）と両親の職業
+        # 出生地（市町村名）と両親の学歴
         birth_city = life['birth_city']
-        father_industry = life.get('father_industry', '不明')
-        mother_industry = life.get('mother_industry', '不明')
+        father_education = life.get('father_education', '')
+        mother_education = life.get('mother_education', '')
+        household_income = life.get('household_income', '')
         
         # 性別の表示
         gender = life.get('gender', '不明')
         
-        # 出生地の整形
-        if "北海道" not in birth_city:
-            birth_location = f"北海道{birth_city}"
-        else:
-            birth_location = birth_city
+        # 出生地の整形（地域に応じて）- 都道府県名は含めず市町村名のみ
+        # birth_cityから市町村名のみを抽出
+        birth_city_only = birth_city
+        for prefix in ["北海道", "東京都"]:
+            if birth_city.startswith(prefix):
+                birth_city_only = birth_city[len(prefix):]
+                break
         
         # 進学の表示
         education_parts = []
@@ -73,17 +89,28 @@ class LifeFormatter:
             university_dest = life["university_destination"]
             university_name = life.get("university_name", f"{university_dest}の大学")
             education_parts.append(f"{university_dest}の{university_name}に進学")
+        elif life.get("vocational_school"):
+            # 専門学校・短大に進学した場合
+            education_parts.append("専門学校に進学")
         
         education_str = "\n".join(education_parts) if education_parts else "中学卒業"
         
-        # 最初の就職の表示
+        # 最初の就職の表示（企業規模・雇用形態を追加）
         first_industry = life.get('first_industry') or life.get('industry', '不明')
+        employment_type = life.get('employment_type', '正社員')
+        company_size = life.get('company_size', '中企業')
+        
+        # 雇用形態の表示を調整（正社員→正社員、非正規→非正規社員）
+        employment_display = "正社員" if employment_type == "正社員" else "非正規社員"
+        
         if life["university"]:
-            job_str = f"大学卒業後、{first_industry}に就職"
+            job_str = f"大学卒業後、{first_industry}の{company_size}に{employment_display}として就職"
+        elif life.get("vocational_school"):
+            job_str = f"専門学校卒業後、{first_industry}の{company_size}に{employment_display}として就職"
         elif life["high_school"]:
-            job_str = f"高校卒業後、{first_industry}に就職"
+            job_str = f"高校卒業後、{first_industry}の{company_size}に{employment_display}として就職"
         else:
-            job_str = f"中学卒業後、{first_industry}に就職"
+            job_str = f"中学卒業後、{first_industry}の{company_size}に{employment_display}として就職"
         
         # キャリアサマリーから転職回数と無職年数を取得
         career_summary = life.get("career_summary", {})
@@ -110,21 +137,46 @@ class LifeFormatter:
         if "悪性新生物" in death_cause or "腫瘍" in death_cause:
             death_cause = "ガン"
         
+        # 生涯年収を計算（LifeScorerを使用）
+        from .scoring import LifeScorer
+        scorer = LifeScorer()
+        income_result = scorer.calculate_lifetime_income(life)
+        lifetime_income = income_result["total"]  # 万円
+        lifetime_income_oku = lifetime_income / 10000  # 億円に変換
+        
         # 定年退職できたか、その前に死亡したかで表示を分ける
         retirement_str = None
         death_str = None
         
         if retirement_age is not None and death_age >= retirement_age:
-            # 定年退職できた場合
-            retirement_str = f"{career_prefix}{retirement_age}歳で定年退職"
+            # 定年退職できた場合（生涯年収も表示）
+            retirement_str = f"{career_prefix}{retirement_age}歳で定年退職。生涯年収約{lifetime_income_oku:.1f}億円"
             death_str = f"{death_age}歳で{death_cause}により死亡"
         else:
-            # 定年前に死亡した場合
-            death_str = f"{career_prefix}{death_age}歳で{death_cause}により死亡"
+            # 定年前に死亡した場合（生涯年収も表示）
+            death_str = f"{career_prefix}{death_age}歳で{death_cause}により死亡。生涯年収約{lifetime_income_oku:.1f}億円"
         
-        # 最終的な出力
+        # 世帯年収の表示（万円単位に変換）
+        if household_income:
+            # 「400〜600万円」→「400〜600万」のように整形
+            income_display = household_income.replace("万円", "万")
+            income_str = f"世帯年収{income_display}"
+        else:
+            income_str = "世帯年収不明"
+        
+        # 両親の学歴表示（簡略化）
+        father_edu_short = self._shorten_education(father_education) if father_education else "不明"
+        mother_edu_short = self._shorten_education(mother_education) if mother_education else "不明"
+        
+        # 最終的な出力（新形式）
+        # 1行目: ◯◯市に◯性として生まれる
+        line1 = f"{birth_city_only}に{gender}として生まれる"
+        # 2行目: 世帯年収◯◯万、父親は◯卒、母親は◯卒
+        line2 = f"{income_str}、父親は{father_edu_short}卒、母親は{mother_edu_short}卒"
+        
         parts = [
-            f"{birth_location}に{gender}として、{father_industry}の父親と{mother_industry}の母親の元に生まれる",
+            line1,
+            line2,
             education_str,
             job_str
         ]
@@ -135,6 +187,20 @@ class LifeFormatter:
         parts.append(death_str)
         
         return "\n".join(parts)
+    
+    def _shorten_education(self, education: str) -> str:
+        """学歴を短縮形に変換"""
+        # 「大学卒」→「大」、「高校卒」→「高」、「中学卒」→「中」、「短大・専門」→「専」
+        if "大学" in education or "大卒" in education:
+            return "大"
+        elif "短大" in education or "専門" in education:
+            return "専"
+        elif "高校" in education or "高卒" in education:
+            return "高"
+        elif "中学" in education or "中卒" in education:
+            return "中"
+        else:
+            return education
     
     def format_score_breakdown(
         self,
@@ -155,8 +221,8 @@ class LifeFormatter:
         lines.append("=" * 60)
         lines.append(f"【人生スコア】 {score_result['total_score']:.1f} / 100点")
         lines.append("=" * 60)
-        lines.append("※ 東京で生まれ育ち最大限に充実した人生を100点として算出")
-        lines.append("※ 各要素の幾何平均で計算（掛け算方式）")
+        lines.append(f"ランク: {score_result.get('rank', '-')} ({score_result.get('rank_label', '-')})")
+        lines.append(f"計算方法: {score_result.get('calculation_method', '-')}")
         lines.append("")
         
         breakdown = score_result["breakdown"]
@@ -164,69 +230,44 @@ class LifeFormatter:
         lines.append("【スコア内訳】")
         lines.append("-" * 60)
         
-        for key in ["location", "gender", "education", "university_dest", "industry", "lifespan", "death_cause"]:
+        # 新しいキー構造に対応（education、lifetime_income、lifespan）
+        for key in ["education", "lifetime_income", "lifespan"]:
+            if key not in breakdown:
+                continue
             item = breakdown[key]
             score = item["score"]
             
-            # 計算に含まれるかどうかを表示
-            if item.get("include_in_calc") == False:
-                calc_note = "（計算対象外）"
-            else:
-                calc_note = ""
-            
-            lines.append(f"  {item['label']}: {score}点 {calc_note}")
+            lines.append(f"  {item['label']}: {score}点")
             lines.append(f"    → {item['value']}")
             
             if verbose:
                 lines.append(f"    理由: {item['reason']}")
-                if item['source'] != "-":
+                if item.get('source') and item['source'] != "-":
                     lines.append(f"    出典: {item['source']}")
             lines.append("")
-        
-        lines.append("-" * 60)
-        
-        # スコア計算式を表示
-        lines.append("【スコア計算】")
-        calc_items = []
-        for key in ["location", "gender", "education", "university_dest", "industry", "lifespan", "death_cause"]:
-            item = breakdown[key]
-            if item.get("include_in_calc") != False:
-                calc_items.append((item['label'], item['score']))
-        
-        # 計算式の表示
-        calc_formula = " × ".join([f"{label}({score}%)" for label, score in calc_items])
-        lines.append(f"  {calc_formula}")
-        
-        # 実際の計算
-        product = 1.0
-        for _, score in calc_items:
-            product *= score / 100
-        
-        lines.append(f"  = {product:.6f}")
-        lines.append(f"  √({product:.6f}) × 100 = {(product ** 0.5) * 100:.1f}点")
-        lines.append("")
         
         lines.append("-" * 60)
         lines.append(f"総合スコア: {score_result['total_score']:.1f}点")
         lines.append("")
         
-        # スコアの解釈（掛け算方式用に調整）
+        # スコアの解釈
         total = score_result['total_score']
-        if total >= 60:
-            interpretation = "非常に恵まれた人生（上位5%相当）"
-        elif total >= 45:
-            interpretation = "平均以上の充実した人生"
-        elif total >= 35:
-            interpretation = "平均的な人生"
-        elif total >= 25:
-            interpretation = "やや困難の多い人生"
-        elif total >= 15:
-            interpretation = "多くの困難に直面した人生"
+        if total >= 90:
+            interpretation = "神レベル！（上位1%相当）"
+        elif total >= 80:
+            interpretation = "大当たり！（上位5%相当）"
+        elif total >= 70:
+            interpretation = "当たり（上位20%相当）"
+        elif total >= 50:
+            interpretation = "普通（平均付近）"
+        elif total >= 30:
+            interpretation = "ハズレ（下位20%相当）"
         else:
-            interpretation = "極めて厳しい人生"
+            interpretation = "大ハズレ（下位5%相当）"
         
         lines.append(f"【評価】 {interpretation}")
         
+        return "\n".join(lines)
         return "\n".join(lines)
     
     def format_sns_reactions(self, reactions: List[str]) -> str:
@@ -274,7 +315,8 @@ class LifeFormatter:
             lines.append(f"  データ年: {dataset['year']}")
         
         lines.append("\n" + "=" * 80)
-        lines.append("すべて北海道庁が公開している公式統計データを使用しています。")
+        region_name = self.region_names.get(self.region, "各自治体")
+        lines.append(f"すべて{region_name}が公開している公式統計データを使用しています。")
         lines.append("=" * 80)
         
         return "\n".join(lines)

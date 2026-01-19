@@ -2,7 +2,8 @@
 スコア計算モジュール
 
 人生データからスコアを計算する
-掛け算方式: 各要素を掛け合わせることで、地域格差が如実に反映される
+- 親ガチャスコア: 親の学歴、世帯年収、出生地（北海道か東京か）
+- 人生スコア: 最終学歴、生涯年収、寿命
 """
 
 from typing import Dict, Any
@@ -17,55 +18,222 @@ from .constants import (
     get_lifespan_score,
     get_university_rank,
     get_university_rank_score,
+    # 親ガチャスコア用
+    PARENT_EDUCATION_SCORES,
+    HOUSEHOLD_INCOME_SCORES,
+    BIRTHPLACE_SCORES,
+    # ランク関連
+    get_rank,
+    get_rank_label,
+    # 生涯年収関連
+    LIFETIME_INCOME_BASE,
+    get_lifetime_income_score,
+    # 企業規模・雇用形態関連
+    COMPANY_SIZE_SALARY_MULTIPLIER,
+    EMPLOYMENT_TYPE_SALARY_MULTIPLIER,
 )
 
 
 class LifeScorer:
     """人生スコアを計算するクラス"""
     
-    def calculate_life_score(self, life: Dict[str, Any]) -> Dict[str, Any]:
+    def calculate_parent_gacha_score(self, life: Dict[str, Any]) -> Dict[str, Any]:
         """
-        人生のスコアを計算する（0〜100点）
-        東京で生まれ育って最大限に充実した人生を100点とする
-        
-        掛け算方式: 各要素の割合を掛け合わせて最終スコアを算出
-        これにより、どこか1つが低いと全体が大きく下がる
+        親ガチャスコアを計算する（0〜100点）
+        親の学歴、世帯年収、出生地（北海道か東京か）の3要素で算定
         
         Args:
             life: generate_life()で生成された人生データ
             
         Returns:
-            dict: 総合スコアと各項目のスコア詳細
+            dict: 総合スコアとランク、各項目のスコア詳細
         """
         scores = {}
         
-        # 1. 出生地スコア（北海道内なので一律54%）
-        location_score = LOCATION_SCORES["北海道"]
-        scores["location"] = {
-            "score": location_score,
+        # 1. 親の学歴スコア（父母の平均）
+        father_edu = life.get("father_education", "高校卒")
+        mother_edu = life.get("mother_education", "高校卒")
+        
+        father_edu_score = PARENT_EDUCATION_SCORES.get(father_edu, PARENT_EDUCATION_SCORES["default"])
+        mother_edu_score = PARENT_EDUCATION_SCORES.get(mother_edu, PARENT_EDUCATION_SCORES["default"])
+        parent_edu_score = (father_edu_score + mother_edu_score) / 2
+        
+        scores["parent_education"] = {
+            "score": parent_edu_score,
+            "max_score": 100,
+            "label": "親の学歴",
+            "value": f"父:{father_edu} / 母:{mother_edu}",
+            "reason": f"父親{father_edu_score}点 + 母親{mother_edu_score}点 の平均",
+            "source": "文部科学省「学校基本調査」"
+        }
+        
+        # 2. 世帯年収スコア
+        household_income = life.get("household_income", "400〜600万円")
+        income_score = HOUSEHOLD_INCOME_SCORES.get(household_income, HOUSEHOLD_INCOME_SCORES["default"])
+        
+        scores["household_income"] = {
+            "score": income_score,
+            "max_score": 100,
+            "label": "世帯年収",
+            "value": household_income,
+            "reason": f"世帯年収{household_income}",
+            "source": "厚生労働省「国民生活基礎調査」"
+        }
+        
+        # 3. 出生地スコア（北海道か東京か）
+        birth_city = life.get("birth_city", "")
+        # 地域判定（東京都内か北海道か）
+        if "東京" in birth_city or "区" in birth_city:
+            birthplace_score = BIRTHPLACE_SCORES["東京"]
+            region_name = "東京"
+        else:
+            birthplace_score = BIRTHPLACE_SCORES["北海道"]
+            region_name = "北海道"
+        
+        scores["birthplace"] = {
+            "score": birthplace_score,
             "max_score": 100,
             "label": "出生地",
-            "value": life["birth_city"],
-            "reason": f"北海道生まれ（東京比: 求人倍率0.93 vs 1.73）",
-            "source": "厚生労働省「一般職業紹介状況」2025年11月"
+            "value": f"{birth_city}（{region_name}）",
+            "reason": f"{region_name}生まれ（教育・就職機会の地域格差）",
+            "source": "厚生労働省「一般職業紹介状況」"
         }
         
-        # 2. 性別スコア
-        gender = life["gender"]
-        gender_score = GENDER_SCORES.get(gender, 75)
-        scores["gender"] = {
-            "score": gender_score,
-            "max_score": 100,
-            "label": "性別",
-            "value": gender,
-            "reason": f"{gender}（賃金格差: 男性100に対し女性75.8）" if gender == "女性" else f"{gender}（賃金基準）",
-            "source": "厚生労働省「賃金構造基本統計調査」2024年"
-        }
+        # 総合スコア計算（3要素の加重平均）
+        # 親の学歴40%、世帯年収40%、出生地20%
+        total_score = (
+            parent_edu_score * 0.40 +
+            income_score * 0.40 +
+            birthplace_score * 0.20
+        )
         
-        # 3. 学歴スコア
-        if life["university"]:
+        # ランク判定
+        rank = get_rank(total_score)
+        rank_label = get_rank_label(rank)
+        
+        return {
+            "total_score": round(total_score, 1),
+            "rank": rank,
+            "rank_label": rank_label,
+            "breakdown": scores,
+            "calculation_method": "親ガチャ（親の学歴40%、世帯年収40%、出生地20%）",
+        }
+    
+    def calculate_lifetime_income(self, life: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        生涯年収を計算する（万円）
+        定年前に死亡した場合は、按分計算を行う
+        
+        計算式:
+        生涯年収 = 基準生涯年収 × 勤務年数比率 × 産業補正 × 性別補正 × 企業規模補正 × 雇用形態補正
+        
+        Args:
+            life: generate_life()で生成された人生データ
+            
+        Returns:
+            dict: 生涯年収（万円）と各補正係数の詳細
+        """
+        # 最終学歴を判定
+        if life.get("university"):
             education_level = "大学卒"
-        elif life["high_school"]:
+            start_work_age = 22
+        elif life.get("vocational_school"):
+            education_level = "短大・専門卒"
+            start_work_age = 20
+        elif life.get("high_school"):
+            education_level = "高校卒"
+            start_work_age = 18
+        else:
+            education_level = "中学卒"
+            start_work_age = 15
+        
+        # 基準生涯年収を取得
+        base_income = LIFETIME_INCOME_BASE.get(education_level, LIFETIME_INCOME_BASE["高校卒"])
+        
+        # 定年年齢（なければ65歳を仮定）
+        retirement_age = life.get("retirement_age") or 65
+        death_age = life.get("death_age", 80)
+        
+        # 定年まで働けた場合の勤務年数
+        full_working_years = retirement_age - start_work_age
+        
+        # 実際の勤務年数（死亡年齢と定年年齢の早い方まで）
+        actual_end_age = min(death_age, retirement_age)
+        actual_working_years = max(0, actual_end_age - start_work_age)
+        
+        # 勤務年数比率を計算
+        if actual_working_years < full_working_years and full_working_years > 0:
+            working_years_ratio = actual_working_years / full_working_years
+        else:
+            working_years_ratio = 1.0
+        
+        lifetime_income = base_income * working_years_ratio
+        
+        # 産業による補正（産業スコアを年収に反映）
+        industry = life.get("industry", "")
+        industry_score = INDUSTRY_SALARY_SCORES.get("default")
+        for ind_name, ind_score in INDUSTRY_SALARY_SCORES.items():
+            if ind_name in industry or industry in ind_name:
+                industry_score = ind_score
+                break
+        
+        # 産業スコア（0-100）を補正係数（0.7-1.3）に変換
+        industry_multiplier = 0.7 + (industry_score / 100) * 0.6
+        lifetime_income *= industry_multiplier
+        
+        # 性別による補正
+        gender = life.get("gender", "男性")
+        gender_multiplier = 0.76 if gender == "女性" else 1.0
+        lifetime_income *= gender_multiplier
+        
+        # 企業規模による補正（大企業1.00、中企業0.82、小企業0.72）
+        company_size = life.get("company_size", "中企業")
+        company_size_multiplier = COMPANY_SIZE_SALARY_MULTIPLIER.get(
+            company_size,
+            COMPANY_SIZE_SALARY_MULTIPLIER["default"]
+        )
+        lifetime_income *= company_size_multiplier
+        
+        # 雇用形態による補正（正社員1.00、非正規0.65）
+        employment_type = life.get("employment_type", "正社員")
+        employment_type_multiplier = EMPLOYMENT_TYPE_SALARY_MULTIPLIER.get(
+            employment_type,
+            EMPLOYMENT_TYPE_SALARY_MULTIPLIER["default"]
+        )
+        lifetime_income *= employment_type_multiplier
+        
+        return {
+            "total": round(lifetime_income, 0),
+            "base_income": base_income,
+            "education_level": education_level,
+            "working_years_ratio": working_years_ratio,
+            "industry_multiplier": industry_multiplier,
+            "gender_multiplier": gender_multiplier,
+            "company_size": company_size,
+            "company_size_multiplier": company_size_multiplier,
+            "employment_type": employment_type,
+            "employment_type_multiplier": employment_type_multiplier,
+        }
+    
+    def calculate_life_score(self, life: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        人生スコアを計算する（0〜100点）
+        最終学歴、生涯年収、寿命の3要素で算定
+        
+        Args:
+            life: generate_life()で生成された人生データ
+            
+        Returns:
+            dict: 総合スコアとランク、各項目のスコア詳細
+        """
+        scores = {}
+        
+        # 1. 最終学歴スコア
+        if life.get("university"):
+            education_level = "大学卒"
+        elif life.get("vocational_school"):
+            education_level = "短大・専門卒"
+        elif life.get("high_school"):
             education_level = "高校卒"
         else:
             education_level = "中学卒"
@@ -80,188 +248,94 @@ class LifeScorer:
             "source": "労働政策研究・研修機構「ユースフル労働統計」"
         }
         
-        # 4. 大学進学先スコア（大学進学者のみ計算に含める）
-        if life["university"] and life.get("university_destination"):
-            dest = life["university_destination"]
-            dest_score = UNIVERSITY_DESTINATION_SCORES.get(dest, UNIVERSITY_DESTINATION_SCORES["default"])
-            scores["university_dest"] = {
-                "score": dest_score,
-                "max_score": 100,
-                "label": "大学進学先",
-                "value": dest,
-                "reason": f"{dest}の大学（産業集積度・求人倍率に基づく）",
-                "source": "文部科学省「学校基本調査」",
-                "include_in_calc": True,
-            }
+        # 2. 生涯年収スコア
+        income_result = self.calculate_lifetime_income(life)
+        lifetime_income = income_result["total"]
+        lifetime_income_score = get_lifetime_income_score(lifetime_income)
+        
+        # 定年前死亡の場合の注記
+        death_age = life.get("death_age", 80)
+        retirement_age = life.get("retirement_age") or 65
+        if death_age < retirement_age:
+            income_note = f"（{death_age}歳で死亡のため按分）"
         else:
-            # 大学に行かなかった場合は計算から除外
-            scores["university_dest"] = {
-                "score": 0,
-                "max_score": 100,
-                "label": "大学進学先",
-                "value": "進学せず",
-                "reason": "大学に進学しなかった（スコア計算から除外）",
-                "source": "-",
-                "include_in_calc": False,
-            }
+            income_note = ""
         
-        # 4.5. 大学ランクスコア（大学進学者のみ計算に含める）
-        if life["university"] and life.get("university_name"):
-            uni_name = life["university_name"]
-            uni_rank = get_university_rank(uni_name)
-            uni_rank_score = get_university_rank_score(uni_name)
-            
-            rank_labels = {"S": "難関", "A": "上位", "B": "中堅", "C": "標準", "D": "その他"}
-            rank_label = rank_labels.get(uni_rank, "標準")
-            
-            scores["university_rank"] = {
-                "score": uni_rank_score,
-                "max_score": 100,
-                "label": "大学ランク",
-                "value": f"{uni_name}（{rank_label}）",
-                "reason": f"偏差値ランク{uni_rank}（{rank_label}大学）",
-                "source": "大学偏差値ランキング",
-                "include_in_calc": True,
-            }
-        else:
-            scores["university_rank"] = {
-                "score": 0,
-                "max_score": 100,
-                "label": "大学ランク",
-                "value": "進学せず",
-                "reason": "大学に進学しなかった（スコア計算から除外）",
-                "source": "-",
-                "include_in_calc": False,
-            }
+        # 補正係数の説明文を生成
+        multiplier_details = []
+        if income_result["company_size_multiplier"] != 1.0:
+            multiplier_details.append(f"{income_result['company_size']}×{income_result['company_size_multiplier']:.2f}")
+        if income_result["employment_type_multiplier"] != 1.0:
+            multiplier_details.append(f"{income_result['employment_type']}×{income_result['employment_type_multiplier']:.2f}")
+        multiplier_note = f"（{', '.join(multiplier_details)}）" if multiplier_details else ""
         
-        # 5. 就職産業スコア
-        industry = life["industry"]
-        # 産業名の部分一致でスコアを取得
-        industry_score = INDUSTRY_SALARY_SCORES.get("default")
-        for ind_name, ind_score in INDUSTRY_SALARY_SCORES.items():
-            if ind_name in industry or industry in ind_name:
-                industry_score = ind_score
-                break
-        
-        scores["industry"] = {
-            "score": industry_score,
+        scores["lifetime_income"] = {
+            "score": lifetime_income_score,
             "max_score": 100,
-            "label": "就職産業",
-            "value": industry,
-            "reason": f"{industry}（産業別平均賃金に基づく）",
-            "source": "厚生労働省「賃金構造基本統計調査」2024年"
+            "label": "生涯年収",
+            "value": f"約{lifetime_income/10000:.1f}億円{income_note}",
+            "reason": f"推定生涯年収{lifetime_income:.0f}万円{multiplier_note}",
+            "source": "労働政策研究・研修機構「ユースフル労働統計」",
+            "raw_value": lifetime_income,
+            "income_details": income_result,
         }
         
-        # 6. 寿命スコア
-        death_age = life["death_age"]
-        lifespan_score = get_lifespan_score(death_age, life["gender"])
+        # 3. 寿命スコア
+        lifespan_score = get_lifespan_score(death_age, life.get("gender", "男性"))
+        avg_lifespan = 81.09 if life.get("gender") == "男性" else 87.13
         
-        # 理想的な寿命の基準
-        avg_lifespan = 81.09 if life["gender"] == "男性" else 87.13
         scores["lifespan"] = {
             "score": lifespan_score,
             "max_score": 100,
             "label": "寿命",
             "value": f"{death_age}歳",
-            "reason": f"{death_age}歳で死亡（平均寿命: {life['gender']}{avg_lifespan}歳）",
+            "reason": f"{death_age}歳で死亡（平均寿命: {life.get('gender', '男性')}{avg_lifespan}歳）",
             "source": "厚生労働省「簡易生命表」2024年"
         }
         
-        # 7. 死因スコア
-        death_cause = life["death_cause"]
-        # 死因の分類
-        if "老衰" in death_cause:
-            cause_category = "老衰"
-        elif "自殺" in death_cause or "自傷" in death_cause:
-            cause_category = "自殺"
-        elif "不慮" in death_cause or "事故" in death_cause:
-            cause_category = "不慮の事故"
-        else:
-            cause_category = "default"
+        # 総合スコア計算（3要素の加重平均）
+        # 最終学歴30%、生涯年収40%、寿命30%
+        total_score = (
+            education_score * 0.30 +
+            lifetime_income_score * 0.40 +
+            lifespan_score * 0.30
+        )
         
-        death_cause_score = DEATH_CAUSE_SCORES.get(cause_category, DEATH_CAUSE_SCORES["default"])
-        
-        # 悪性新生物（ガン）などの病気は70点
-        if "悪性新生物" in death_cause or "腫瘍" in death_cause:
-            death_cause_score = 70
-            cause_display = "ガン"
-        elif "心疾患" in death_cause:
-            death_cause_score = 65
-            cause_display = death_cause
-        elif "脳血管" in death_cause:
-            death_cause_score = 65
-            cause_display = death_cause
-        else:
-            cause_display = death_cause
-        
-        scores["death_cause"] = {
-            "score": death_cause_score,
-            "max_score": 100,
-            "label": "死因",
-            "value": cause_display,
-            "reason": f"{cause_display}で死亡（老衰が最高評価）",
-            "source": "厚生労働省「人口動態統計」"
-        }
-        
-        # ============================================================
-        # 加重平均方式でスコア計算（平均50〜60点になるよう調整）
-        # 各要素の重みを考慮して合計
-        # ============================================================
-        
-        # 基本要素のスコアと重み
-        # 出生地（平均54）の重みを上げて全体平均を下げる
-        # 産業（平均62）の重みも上げる
-        base_scores = [
-            (location_score, 0.25),      # 出生地（北海道は54点）- 最重要要素
-            (gender_score, 0.05),        # 性別（女性は76点）- 影響を軽減
-            (education_score, 0.10),     # 学歴（中卒60、高卒75、大卒100）
-            (industry_score, 0.20),      # 産業（飲食45〜IT100）
-            (lifespan_score, 0.20),      # 寿命（30歳以下0〜90歳以上100）
-            (death_cause_score, 0.10),   # 死因（自殺20〜老衰100）
-        ]
-        
-        # 大学関連スコア（大卒の場合のみ）
-        if scores["university_dest"].get("include_in_calc", False):
-            base_scores.append((scores["university_dest"]["score"], 0.05))
-        if scores["university_rank"].get("include_in_calc", False):
-            base_scores.append((scores["university_rank"]["score"], 0.05))
-        
-        # 重みを正規化（大卒でない場合、他の要素の重みを増やす）
-        total_weight = sum(weight for _, weight in base_scores)
-        
-        # 加重平均でスコアを計算
-        weighted_sum = sum(score * weight for score, weight in base_scores)
-        base_score = weighted_sum / total_weight
-        
-        # スケーリング調整
-        # 目標分布:
-        # - 北海道の典型的なケース: 50〜60点
-        # - 頑張れば: 70〜80点
-        # - 最良ケース: 90点以上も稀に出る（0.5〜1%）
-        # - 最悪ケース: 20〜30点
-        #
-        # base_scoreの実測分布: 平均70点、範囲50-85点程度
-        # これを平均55点、範囲20-100点に変換
-        # 変換式: (base_score - 70) * 3.0 + 55
-        # base=50 → -5点→20点、base=70 → 55点、base=80 → 85点、base=85→100点
-        if base_score <= 0:
-            total_score = 0
-        else:
-            # 線形変換: 中央を55点に、分布を3倍に広げる
-            adjusted = (base_score - 70) * 3.0 + 55
-            # 最低20点、最高100点に制限
-            total_score = max(20, min(100, adjusted))
+        # ランク判定
+        rank = get_rank(total_score)
+        rank_label = get_rank_label(rank)
         
         return {
             "total_score": round(total_score, 1),
+            "rank": rank,
+            "rank_label": rank_label,
             "breakdown": scores,
-            "calculation_method": "weighted_average",  # 計算方式を記録
-            "num_factors": len(base_scores),
+            "calculation_method": "人生スコア（最終学歴30%、生涯年収40%、寿命30%）",
+        }
+    
+    def calculate_all_scores(self, life: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        親ガチャスコアと人生スコアの両方を計算する
+        
+        Args:
+            life: generate_life()で生成された人生データ
+            
+        Returns:
+            dict: 両方のスコア結果
+        """
+        parent_gacha = self.calculate_parent_gacha_score(life)
+        life_score = self.calculate_life_score(life)
+        
+        return {
+            "parent_gacha": parent_gacha,
+            "life_score": life_score,
         }
     
     def get_score_interpretation(self, total_score: float) -> str:
         """
-        スコアの解釈を返す（app.pyのランク基準に合わせて調整）
+        スコアの解釈を返す
+        
+        統計的スケール: 平均60点を基準
         
         Args:
             total_score: 総合スコア
@@ -269,15 +343,16 @@ class LifeScorer:
         Returns:
             解釈文字列
         """
-        if total_score >= 90:
-            return "素晴らしい人生！（上位1%相当）"
-        elif total_score >= 80:
-            return "とても充実した人生（上位5%相当）"
-        elif total_score >= 70:
-            return "平均以上の良い人生"
-        elif total_score >= 60:
-            return "平均的な人生"
-        elif total_score >= 30:
-            return "いろいろあった人生"
+        rank = get_rank(total_score)
+        if rank == "SS":
+            return "神レベル！（上位1%相当）"
+        elif rank == "S":
+            return "大当たり！（上位5%相当）"
+        elif rank == "A":
+            return "当たり（上位20%相当）"
+        elif rank == "B":
+            return "普通（平均付近）"
+        elif rank == "C":
+            return "ハズレ（下位20%相当）"
         else:
-            return "波乱万丈の人生"
+            return "大ハズレ（下位5%相当）"

@@ -1,158 +1,289 @@
 #!/usr/bin/env python3
 """
-北海道人生シミュレーター - Webアプリ版
+人生シミュレーター - Webアプリ版
+北海道・東京の公開データに基づいて人生をシミュレーション
 """
 
 import streamlit as st
 import pandas as pd
-from src import HokkaidoLifeSimulator
+from src import RegionalLifeSimulator, REGION_CONFIG
+
+# 地域別の設定
+REGION_DISPLAY = {
+    "hokkaido": {"name": "北海道", "icon": "🏔️", "color": "#1f77b4", "data_source": "北海道庁・厚生労働省"},
+    "tokyo": {"name": "東京", "icon": "🗼", "color": "#e63946", "data_source": "東京都・厚生労働省"},
+}
+
+# 地域ごとのガチャ確率（統計的な分布に基づく推定）
+REGION_GACHA_RATES = {
+    "hokkaido": {"SS": "0.5%", "S": "3%", "A": "12%", "B": "35%", "C": "35%", "D": "14.5%"},
+    "tokyo": {"SS": "2%", "S": "8%", "A": "20%", "B": "40%", "C": "22%", "D": "8%"},
+}
 
 # ページ設定
 st.set_page_config(
-    page_title="北海道人生シミュレーター",
-    page_icon="🌏",
+    page_title="人生ガチャ",
+    page_icon="🎰",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
-# カスタムCSS
-st.markdown("""
+# セッション状態の初期化
+if 'lives' not in st.session_state:
+    st.session_state.lives = []
+if 'selected_region' not in st.session_state:
+    st.session_state.selected_region = "hokkaido"
+if 'show_dataset_dialog' not in st.session_state:
+    st.session_state.show_dataset_dialog = False
+
+# カスタムCSS（動的に地域カラーを適用）
+def get_custom_css(region_color):
+    return f"""
     <style>
-    .main-header {
+    .main-header {{
         font-size: 3rem;
         font-weight: bold;
-        color: #1f77b4;
+        color: {region_color};
         text-align: center;
         padding: 1rem 0;
-    }
-    .life-story {
+    }}
+    .life-story {{
         background-color: #f0f2f6;
         padding: 1.5rem;
         border-radius: 10px;
         margin: 1rem 0;
-        border-left: 5px solid #1f77b4;
-    }
-    .life-story p {
+        border-left: 5px solid {region_color};
+    }}
+    .life-story p {{
         font-size: 1.1rem;
         line-height: 1.8;
         margin: 0.5rem 0;
-    }
-    .dataset-info {
+    }}
+    .dataset-info {{
         background-color: #e8f4f8;
         padding: 1rem;
         border-radius: 5px;
         margin: 0.5rem 0;
         font-size: 0.9rem;
-    }
-    .stButton>button {
+    }}
+    .gacha-btn {{
         width: 100%;
-        background-color: #1f77b4;
+        background-color: {region_color};
         color: white;
         font-size: 1.2rem;
         padding: 0.75rem;
         border-radius: 10px;
-    }
-    .stButton>button:hover {
-        background-color: #1557a0;
-    }
+    }}
     </style>
-    """, unsafe_allow_html=True)
+    """
+
+# 地域選択
+current_region = st.session_state.selected_region
+region_info = REGION_DISPLAY[current_region]
+
+# CSSを適用
+st.markdown(get_custom_css(region_info["color"]), unsafe_allow_html=True)
 
 # タイトル
-st.markdown('<div class="main-header">🌏 北海道人生シミュレーター</div>', unsafe_allow_html=True)
+st.markdown(f'<div class="main-header">🎰 {region_info["icon"]} {region_info["name"]}人生ガチャ</div>', unsafe_allow_html=True)
+
+# 地域選択トグル
 st.markdown("---")
 
-# 説明
-st.markdown("""
-### 📊 このアプリについて
+col_toggle1, col_toggle2, col_toggle3 = st.columns([1, 2, 1])
+with col_toggle2:
+    st.markdown("##### 🗺️ 地域を選択")
+    
+    # シンプルなボタンを作成
+    col_hk, col_tk = st.columns(2)
+    
+    with col_hk:
+        hk_selected = current_region == "hokkaido"
+        if st.button("🏔️ 北海道", key="select_hokkaido", use_container_width=True, type="primary" if hk_selected else "secondary"):
+            if not hk_selected:
+                st.session_state.selected_region = "hokkaido"
+                st.session_state.lives = []
+                st.cache_resource.clear()
+                st.rerun()
+    
+    with col_tk:
+        tk_selected = current_region == "tokyo"
+        if st.button("🗼 東京", key="select_tokyo", use_container_width=True, type="primary" if tk_selected else "secondary"):
+            if not tk_selected:
+                st.session_state.selected_region = "tokyo"
+                st.session_state.lives = []
+                st.cache_resource.clear()
+                st.rerun()
+    
+    # ガチャ確率を表形式で表示
+    st.markdown("##### 🎲 ガチャ確率")
+    
+    hk_rates = REGION_GACHA_RATES["hokkaido"]
+    tk_rates = REGION_GACHA_RATES["tokyo"]
+    
+    # 表形式のHTML
+    st.markdown(f"""
+    <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-top: 0.5rem;">
+        <thead>
+            <tr style="background-color: #f0f2f6;">
+                <th style="padding: 8px; border: 1px solid #ddd; text-align: center;">ランク</th>
+                <th style="padding: 8px; border: 1px solid #ddd; text-align: center; background: linear-gradient(135deg, #FFD700, #FFA500); color: #333;">SS</th>
+                <th style="padding: 8px; border: 1px solid #ddd; text-align: center; background: #C0C0C0; color: #333;">S</th>
+                <th style="padding: 8px; border: 1px solid #ddd; text-align: center; background: #CD7F32; color: #fff;">A</th>
+                <th style="padding: 8px; border: 1px solid #ddd; text-align: center; background: #4CAF50; color: #fff;">B</th>
+                <th style="padding: 8px; border: 1px solid #ddd; text-align: center; background: #FF9800; color: #fff;">C</th>
+                <th style="padding: 8px; border: 1px solid #ddd; text-align: center; background: #f44336; color: #fff;">D</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr style="{'background-color: #e6f2ff; font-weight: bold;' if current_region == 'hokkaido' else ''}">
+                <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">🏔️ 北海道</td>
+                <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">{hk_rates['SS']}</td>
+                <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">{hk_rates['S']}</td>
+                <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">{hk_rates['A']}</td>
+                <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">{hk_rates['B']}</td>
+                <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">{hk_rates['C']}</td>
+                <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">{hk_rates['D']}</td>
+            </tr>
+            <tr style="{'background-color: #ffe6e8; font-weight: bold;' if current_region == 'tokyo' else ''}">
+                <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">🗼 東京</td>
+                <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">{tk_rates['SS']}</td>
+                <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">{tk_rates['S']}</td>
+                <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">{tk_rates['A']}</td>
+                <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">{tk_rates['B']}</td>
+                <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">{tk_rates['C']}</td>
+                <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">{tk_rates['D']}</td>
+            </tr>
+        </tbody>
+    </table>
+    """, unsafe_allow_html=True)
 
-北海道庁が公開している公式統計データを使って、ランダムに人生の軌跡を生成するシミュレーターです。
+st.markdown("---")
 
-出生地、進学、就職、退職、そして死亡まで、統計データに基づいたリアルな人生を体験できます。
-""")
+# 設定エリア（2列）
+col_settings1, col_settings2 = st.columns(2)
 
-# サイドバー設定
+with col_settings1:
+    st.subheader("⚙️ 設定")
+    # 生成人数（横幅を狭くするためにcolumns使用）
+    col_slider, col_empty = st.columns([2, 1])
+    with col_slider:
+        num_people = st.slider(
+            "生成する人数",
+            min_value=1,
+            max_value=20,
+            value=1,
+            help="一度に生成する人生の数を選択してください"
+        )
+
+with col_settings2:
+    st.subheader("📊 表示オプション")
+    show_score = st.checkbox("人生スコアを表示", value=True, help="最終学歴・生涯年収・寿命による人生スコアを表示")
+    show_parent_gacha = st.checkbox("親ガチャスコアを表示", value=False, help="親の学歴・世帯年収・出生地による親ガチャスコアを表示")
+    verbose_score = st.checkbox("スコアの詳細な根拠を表示", value=False, help="各項目の出典を表示")
+
+# サイドバー（非表示だが互換性のため残す）
 with st.sidebar:
     st.header("⚙️ 設定")
-    
-    # 生成人数
-    num_people = st.slider(
-        "生成する人数",
-        min_value=1,
-        max_value=20,
-        value=1,
-        help="一度に生成する人生の数を選択してください"
-    )
-    
-    # シード値
-    use_seed = st.checkbox("再現性のある結果を生成（シード値を使用）")
-    if use_seed:
-        seed_value = st.number_input(
-            "シード値",
-            min_value=0,
-            max_value=9999,
-            value=42,
-            help="同じシード値を使用すると、同じ結果が再現されます"
-        )
-    else:
-        seed_value = None
-    
-    st.markdown("---")
-    
-    # 表示オプション
-    st.subheader("📊 表示オプション")
-    show_score = st.checkbox("人生スコアを表示", value=True, help="東京基準100点の人生スコアを表示")
-    verbose_score = st.checkbox("スコアの詳細な根拠を表示", value=False, help="各項目の出典を表示")
-    show_sns = st.checkbox("SNS反応を表示", value=True, help="予想されるSNS上の反応を表示")
-    
-    st.markdown("---")
-    
-    # データセット情報の表示
-    show_datasets = st.checkbox("データセット情報を表示", value=False)
-
-# セッション状態の初期化
-if 'lives' not in st.session_state:
-    st.session_state.lives = []
-
-# シミュレーターの初期化（キャッシュをクリアして新しいインスタンスを使用）
-# 起動時に一度キャッシュをクリア
-if 'simulator_initialized' not in st.session_state:
-    st.cache_resource.clear()
-    st.session_state.simulator_initialized = True
-
-@st.cache_resource
-def load_simulator():
-    return HokkaidoLifeSimulator()
-
-# キャッシュクリア機能
-with st.sidebar:
+    st.info("設定はメイン画面に移動しました")
     if st.button("🔄 データ再読み込み", help="シミュレーターのデータを再読み込みします"):
         st.cache_resource.clear()
-        st.session_state.simulator_initialized = False
+        st.session_state.lives = []
         st.rerun()
 
-simulator = load_simulator()
+# シミュレーターの初期化（地域別にキャッシュ）
+@st.cache_resource
+def load_simulator(region: str):
+    return RegionalLifeSimulator(region=region)
+
+simulator = load_simulator(st.session_state.selected_region)
 
 # メインコンテンツ
 col1, col2, col3 = st.columns([1, 2, 1])
 
 with col2:
-    if st.button("🎲 人生を生成する", use_container_width=True):
+    if st.button(f"🎰 {region_info['name']}ガチャを引く", use_container_width=True, type="primary"):
         import random
-        
-        if seed_value is not None:
-            random.seed(seed_value)
         
         st.session_state.lives = []
         with st.spinner('人生を生成中...'):
             for i in range(num_people):
                 life = simulator.generate_life()
                 st.session_state.lives.append(life)
+    
+    # データセット情報ボタン
+    st.markdown("<div style='height: 0.5rem;'></div>", unsafe_allow_html=True)
+    if st.button("📚 データセット情報を見る", use_container_width=True):
+        st.session_state.show_dataset_dialog = True
+
+# データセット情報のダイアログ
+@st.dialog(f"📚 使用しているデータセット（{region_info['name']}）", width="large")
+def show_dataset_info():
+    # データローダーからデータセット情報を取得
+    datasets = simulator.data_loader.get_dataset_info()
+    
+    for dataset in datasets:
+        st.markdown(f"""
+        <div class="dataset-info">
+            <strong>{dataset['name']}</strong> ({dataset['count']})<br>
+            📄 正式名称: {dataset['official_name']}<br>
+            🏢 提供元: {dataset['source']}<br>
+            📅 データ年: {dataset['year']}
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # 詳細情報がある場合は展開表示
+        if 'details' in dataset and dataset['details']:
+            details = dataset['details']
+            with st.expander(f"📊 {dataset['name']} の詳細・根拠データ"):
+                st.markdown(f"**概要**: {details.get('description', '')}")
+                st.markdown(f"**計算方法**: {details.get('methodology', '')}")
+                if details.get('formula'):
+                    st.code(details['formula'], language=None)
+                
+                # 補正係数テーブル
+                if details.get('coefficients'):
+                    st.markdown("**補正係数一覧**:")
+                    coef_data = []
+                    for key, values in details['coefficients'].items():
+                        coef_data.append({
+                            "区分": key,
+                            "高校進学補正": values.get('high_school_modifier', 1.0),
+                            "大学進学補正": values.get('university_modifier', 1.0)
+                        })
+                    st.dataframe(coef_data, use_container_width=True)
+                
+                # 参照データ
+                if details.get('references'):
+                    st.markdown("**参照した研究・統計データ**:")
+                    for i, ref in enumerate(details['references'], 1):
+                        st.markdown(f"**{i}. {ref['name']}**")
+                        st.markdown(f"   - 主な知見: {ref['finding']}")
+                        if ref.get('data'):
+                            st.json(ref['data'])
+                        if ref.get('url'):
+                            st.markdown(f"   - URL: {ref['url']}")
+                
+                # 注意事項
+                if details.get('notes'):
+                    st.markdown("**注意事項**:")
+                    for note in details['notes']:
+                        st.markdown(f"- {note}")
+                
+                # READMEファイルへのリンク
+                if dataset.get('readme'):
+                    st.info(f"詳細なドキュメントは data/{dataset['readme']} を参照してください。")
+    
+    st.info(f"すべて{region_info['data_source']}が公開している公式統計データを使用しています。")
+
+# ダイアログ表示
+if st.session_state.show_dataset_dialog:
+    show_dataset_info()
+    st.session_state.show_dataset_dialog = False
 
 # 生成された人生を表示
 if st.session_state.lives:
     st.markdown("---")
-    st.header("✨ 生成された人生")
     
     for i, life in enumerate(st.session_state.lives):
         with st.container():
@@ -170,71 +301,89 @@ if st.session_state.lives:
             """
             st.markdown(story_html, unsafe_allow_html=True)
             
-            # スコアを表示
-            if show_score:
-                score_result = simulator.calculate_life_score(life)
-                total_score = int(score_result['total_score'])
+            # 親ガチャスコアを表示
+            if show_parent_gacha:
+                parent_gacha_result = simulator.calculate_parent_gacha_score(life)
+                pg_score = int(parent_gacha_result['total_score'])
+                pg_rank = parent_gacha_result.get('rank', 'B')
+                pg_rank_label = parent_gacha_result.get('rank_label', '普通')
                 
-                # ランク名称を決定
-                if total_score >= 90:
-                    rank_name = "★★★★★ よくできました"
-                elif total_score >= 80:
-                    rank_name = "★★★★☆ よかったね"
-                elif total_score >= 70:
-                    rank_name = "★★★☆☆ まあまあ"
-                elif total_score >= 60:
-                    rank_name = "★★☆☆☆ もうすこし"
-                elif total_score >= 30:
-                    rank_name = "★☆☆☆☆ 残念でした"
-                else:
-                    rank_name = "☆☆☆☆☆ 来世ではがんばりましょう"
+                # ランクに応じた色を設定
+                rank_colors = {
+                    "SS": "#FFD700",  # 金色
+                    "S": "#C0C0C0",   # 銀色
+                    "A": "#CD7F32",   # 銅色
+                    "B": "#4CAF50",   # 緑
+                    "C": "#FF9800",   # オレンジ
+                    "D": "#f44336",   # 赤
+                }
+                pg_color = rank_colors.get(pg_rank, "#666")
                 
                 st.markdown(f"""
-                <div style="background-color: #e8f4f8; padding: 1rem; border-radius: 10px; margin: 1rem 0;">
-                    <h4 style="margin: 0;">📊 人生スコア: {total_score}点　{rank_name}</h4>
+                <div style="background-color: #fff3e0; padding: 1rem; border-radius: 10px; margin: 1rem 0; border-left: 5px solid {pg_color};">
+                    <h4 style="margin: 0;">🎰 親ガチャスコア: {pg_score}点　<span style="color: {pg_color}; font-weight: bold;">{pg_rank}ランク</span>　{pg_rank_label}</h4>
+                    <p style="margin: 0.5rem 0 0 0; font-size: 0.85rem; color: #666;">親の学歴・世帯年収・出生地の3要素で算定</p>
                 </div>
                 """, unsafe_allow_html=True)
                 
                 # 詳細なスコア内訳を表示
                 if verbose_score:
-                    with st.expander("📈 スコア内訳を見る"):
-                        breakdown = score_result["breakdown"]
+                    with st.expander("📈 親ガチャスコア内訳を見る"):
+                        breakdown = parent_gacha_result["breakdown"]
                         
-                        for key in ["location", "gender", "education", "university_dest", "university_rank", "industry", "lifespan", "death_cause"]:
+                        for key in ["parent_education", "household_income", "birthplace"]:
                             item = breakdown[key]
                             score = item["score"]
                             
-                            # 計算対象外の場合は表示を変える
-                            if item.get("include_in_calc") == False:
-                                calc_note = "（計算対象外）"
-                            else:
-                                calc_note = ""
-                            
                             st.markdown(f"""
-                            **{item['label']}**: {score}点 {calc_note}  
+                            **{item['label']}**: {score:.1f}点  
                             → {item['value']}  
                             理由: {item['reason']}  
                             出典: {item['source']}
                             """)
                             st.markdown("---")
             
-            # SNS反応を表示
-            if show_sns:
-                score_result = simulator.calculate_life_score(life) if not show_score else score_result
-                sns_reactions = simulator.generate_sns_reactions(life, score_result)
+            # 人生スコアを表示
+            if show_score:
+                score_result = simulator.calculate_life_score(life)
+                total_score = int(score_result['total_score'])
+                life_rank = score_result.get('rank', 'B')
+                life_rank_label = score_result.get('rank_label', '普通')
                 
-                st.markdown("""
-                <div style="background-color: #f5f5f5; padding: 1rem; border-radius: 10px; margin: 1rem 0;">
-                    <h4 style="margin: 0 0 0.5rem 0;">💬 SNSでの予想される反応</h4>
+                # ランクに応じた色を設定
+                rank_colors = {
+                    "SS": "#FFD700",  # 金色
+                    "S": "#C0C0C0",   # 銀色
+                    "A": "#CD7F32",   # 銅色
+                    "B": "#4CAF50",   # 緑
+                    "C": "#FF9800",   # オレンジ
+                    "D": "#f44336",   # 赤
+                }
+                life_color = rank_colors.get(life_rank, "#666")
+                
+                st.markdown(f"""
+                <div style="background-color: #e8f4f8; padding: 1rem; border-radius: 10px; margin: 1rem 0; border-left: 5px solid {life_color};">
+                    <h4 style="margin: 0;">📊 人生スコア: {total_score}点　<span style="color: {life_color}; font-weight: bold;">{life_rank}ランク</span>　{life_rank_label}</h4>
+                    <p style="margin: 0.5rem 0 0 0; font-size: 0.85rem; color: #666;">最終学歴・生涯年収・寿命の3要素で算定</p>
                 </div>
                 """, unsafe_allow_html=True)
                 
-                for reaction in sns_reactions:
-                    st.markdown(f"""
-                    <div style="background-color: white; padding: 0.8rem; border-radius: 8px; margin: 0.5rem 0; border-left: 3px solid #1f77b4;">
-                        💬 {reaction}
-                    </div>
-                    """, unsafe_allow_html=True)
+                # 詳細なスコア内訳を表示
+                if verbose_score:
+                    with st.expander("📈 人生スコア内訳を見る"):
+                        breakdown = score_result["breakdown"]
+                        
+                        for key in ["education", "lifetime_income", "lifespan"]:
+                            item = breakdown[key]
+                            score = item["score"]
+                            
+                            st.markdown(f"""
+                            **{item['label']}**: {score:.1f}点  
+                            → {item['value']}  
+                            理由: {item['reason']}  
+                            出典: {item['source']}
+                            """)
+                            st.markdown("---")
             
             # 詳細情報をエクスパンダーで表示
             with st.expander("📋 詳細データを見る"):
@@ -244,8 +393,11 @@ if st.session_state.lives:
                     st.markdown("**👶 出生情報**")
                     st.metric("性別", life.get('gender', '不明'))
                     st.metric("出生地", life['birth_city'])
+                    st.metric("世帯年収", life.get('household_income', '不明'))
                     st.metric("父親の職業", life.get('father_industry', '不明'))
+                    st.metric("父親の学歴", life.get('father_education', '不明'))
                     st.metric("母親の職業", life.get('mother_industry', '不明'))
+                    st.metric("母親の学歴", life.get('mother_education', '不明'))
                 
                 with col2:
                     st.markdown("**📚 学歴**")
@@ -260,6 +412,9 @@ if st.session_state.lives:
                 
                 with col3:
                     st.markdown("**💼 キャリア・最期**")
+                    # 企業規模と雇用形態
+                    st.metric("企業規模", life.get('company_size', '不明'))
+                    st.metric("雇用形態", life.get('employment_type', '不明'))
                     # キャリアサマリーがある場合
                     career_summary = life.get('career_summary', {})
                     if career_summary:
@@ -273,101 +428,10 @@ if st.session_state.lives:
             
             st.markdown("---")
 
-# データセット情報を表示
-if show_datasets:
-    st.markdown("---")
-    st.header("📚 使用しているデータセット")
-    
-    datasets = [
-        {
-            "name": "1. 市町村別出生数",
-            "official_name": "市区町村別人口、人口動態及び世帯数（令和6年）",
-            "source": "北海道総合政策部地域行政局市町村課",
-            "year": "2024年",
-            "count": f"{len(simulator.birth_data)}市町村"
-        },
-        {
-            "name": "2. 市町村別高校進学率",
-            "official_name": "学校基本調査 中学校卒業後の進路別卒業者数（令和6年度）",
-            "source": "北海道教育委員会",
-            "year": "2024年度",
-            "count": f"{len(simulator.high_school_rates)}市町村"
-        },
-        {
-            "name": "3. 市町村別大学進学率",
-            "official_name": "学校基本調査 高等学校卒業後の進路別卒業者数（令和6年度）",
-            "source": "北海道教育委員会",
-            "year": "2024年度",
-            "count": f"{len(simulator.university_rates)}市町村"
-        },
-        {
-            "name": "4. 大学進学先都道府県",
-            "official_name": "学校基本調査 大学・短期大学への都道府県別入学者数（令和6年度）",
-            "source": "北海道教育委員会",
-            "year": "2024年度",
-            "count": f"{len(simulator.university_destinations)}都道府県"
-        },
-        {
-            "name": "5. 産業別労働者数",
-            "official_name": "労働力調査 第2表 産業別就業者数・雇用者数（令和6年平均）",
-            "source": "北海道総合政策部計画局統計課",
-            "year": "2024年",
-            "count": f"{len(simulator.workers_by_industry)}産業"
-        },
-        {
-            "name": "6. 性別別労働者数",
-            "official_name": "労働力調査（令和6年平均）",
-            "source": "北海道総合政策部計画局統計課",
-            "year": "2024年",
-            "count": f"{len(simulator.workers_by_gender)}区分"
-        },
-        {
-            "name": "7. 性別×産業別労働者数",
-            "official_name": "労働力調査（令和6年平均）+ 全国傾向から推定",
-            "source": "北海道総合政策部計画局統計課 / 総務省統計局",
-            "year": "2024年",
-            "count": f"{len(simulator.workers_by_industry_gender)}産業"
-        },
-        {
-            "name": "8. 定年年齢分布",
-            "official_name": "就労条件総合調査結果の概況（令和4年）",
-            "source": "厚生労働省",
-            "year": "2022年",
-            "count": f"{len(simulator.retirement_age_distribution)}区分"
-        },
-        {
-            "name": "9. 年齢別死亡者数",
-            "official_name": "北海道保健統計年報 第24表 死亡数（令和4年）",
-            "source": "北海道保健福祉部総務課",
-            "year": "2022年",
-            "count": f"{len(simulator.death_by_age)}年齢"
-        },
-        {
-            "name": "10. 死因別死亡者数",
-            "official_name": "北海道保健統計年報 表3 死亡数・死亡率（令和4年）",
-            "source": "北海道保健福祉部総務課",
-            "year": "2022年",
-            "count": f"{len(simulator.death_by_cause)}種類"
-        }
-    ]
-    
-    for dataset in datasets:
-        st.markdown(f"""
-        <div class="dataset-info">
-            <strong>{dataset['name']}</strong> ({dataset['count']})<br>
-            📄 正式名称: {dataset['official_name']}<br>
-            🏢 提供元: {dataset['source']}<br>
-            📅 データ年: {dataset['year']}
-        </div>
-        """, unsafe_allow_html=True)
-    
-    st.info("すべて北海道庁が公開している公式統計データを使用しています。")
-
 # フッター
 st.markdown("---")
-st.markdown("""
+st.markdown(f"""
 <div style="text-align: center; color: #666; font-size: 0.9rem;">
-    <p>🌟 北海道人生シミュレーター | データ提供: 北海道庁・厚生労働省</p>
+    <p>🎰 {region_info['icon']} {region_info['name']}人生ガチャ | データ提供: {region_info['data_source']}</p>
 </div>
 """, unsafe_allow_html=True)
-

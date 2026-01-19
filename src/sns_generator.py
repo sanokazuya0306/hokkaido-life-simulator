@@ -68,11 +68,16 @@ class SNSReactionGenerator:
         else:
             candidates.extend(SNS_REACTIONS["no_university"])
         
-        # 産業ベースの反応
-        industry_score = breakdown["industry"]["score"]
-        if industry_score >= 90:
+        # 産業ベースの反応（lifeデータから判定）
+        industry = life.get("industry", "")
+        # 高収入産業
+        high_income_industries = ["情報通信業", "金融業", "保険業", "電気", "ガス"]
+        # 低収入産業
+        low_income_industries = ["宿泊業", "飲食", "農業", "林業", "漁業"]
+        
+        if any(ind in industry for ind in high_income_industries):
             candidates.extend(SNS_REACTIONS["good_industry"])
-        elif industry_score <= 50:
+        elif any(ind in industry for ind in low_income_industries):
             candidates.extend(SNS_REACTIONS["bad_industry"])
         
         # 転職回数ベースの反応（新規）

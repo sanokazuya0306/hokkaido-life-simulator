@@ -2,6 +2,7 @@
 キャリアシミュレーター
 
 就職先の産業、転職・離職・再就職、定年年齢の決定を担当
+企業規模、雇用形態の決定も担当
 
 転職・離職データは厚生労働省「令和6年雇用動向調査」に基づく
 """
@@ -10,6 +11,11 @@ import csv
 import random
 from pathlib import Path
 from typing import Dict, List, Any, Optional
+
+from ..constants import (
+    COMPANY_SIZE_DISTRIBUTION_BY_EDUCATION,
+    EMPLOYMENT_TYPE_DISTRIBUTION,
+)
 
 
 # デフォルトの転職・離職率データ（CSVがない場合に使用）
@@ -302,3 +308,67 @@ class CareerSimulator:
             "final_employment_status": "就業中" if is_employed else "無職",
             "final_industry": last_industry,
         }
+    
+    def select_company_size(self, education_level: str) -> str:
+        """
+        企業規模を学歴に基づいてランダムに選択
+        
+        大卒は大企業への就職率が高く、中卒は小企業が中心となる
+        
+        Args:
+            education_level: 最終学歴（"大学卒", "高校卒", "中学卒"）
+            
+        Returns:
+            企業規模（"大企業", "中企業", "小企業"）
+        """
+        distribution = COMPANY_SIZE_DISTRIBUTION_BY_EDUCATION.get(
+            education_level,
+            COMPANY_SIZE_DISTRIBUTION_BY_EDUCATION["default"]
+        )
+        
+        # 重み付きランダム選択
+        total = sum(distribution.values())
+        rand = random.uniform(0, total)
+        cumulative = 0
+        
+        for size, weight in distribution.items():
+            cumulative += weight
+            if rand <= cumulative:
+                return size
+        
+        return "中企業"  # フォールバック
+    
+    def select_employment_type(self, education_level: str, gender: str) -> str:
+        """
+        雇用形態を学歴・性別に基づいてランダムに選択
+        
+        学歴が高いほど正社員率が高く、女性は男性より正社員率が低い傾向
+        
+        Args:
+            education_level: 最終学歴（"大学卒", "高校卒", "中学卒"）
+            gender: 性別（"男性", "女性"）
+            
+        Returns:
+            雇用形態（"正社員", "非正規"）
+        """
+        edu_distribution = EMPLOYMENT_TYPE_DISTRIBUTION.get(
+            education_level,
+            EMPLOYMENT_TYPE_DISTRIBUTION["default"]
+        )
+        
+        gender_distribution = edu_distribution.get(
+            gender,
+            edu_distribution.get("男性", {"正社員": 75, "非正規": 25})
+        )
+        
+        # 重み付きランダム選択
+        total = sum(gender_distribution.values())
+        rand = random.uniform(0, total)
+        cumulative = 0
+        
+        for emp_type, weight in gender_distribution.items():
+            cumulative += weight
+            if rand <= cumulative:
+                return emp_type
+        
+        return "正社員"  # フォールバック

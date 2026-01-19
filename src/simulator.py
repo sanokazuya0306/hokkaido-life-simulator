@@ -1,5 +1,5 @@
 """
-北海道人生シミュレーター メインクラス
+人生シミュレーター メインクラス
 
 各モジュールを統合してシミュレーションを実行する
 """
@@ -7,30 +7,37 @@
 from pathlib import Path
 from typing import Dict, Any, Optional
 
-from .data_loader import DataLoader
+from .data_loader import DataLoader, REGION_CONFIG
 from .simulators import BirthSimulator, EducationSimulator, CareerSimulator, DeathSimulator
 from .scoring import LifeScorer
 from .sns_generator import SNSReactionGenerator
 from .formatter import LifeFormatter
 
 
-class HokkaidoLifeSimulator:
+class RegionalLifeSimulator:
     """
-    北海道人生シミュレーターのメインクラス
+    地域別人生シミュレーターのメインクラス
     
-    北海道の公開データを使ってランダムに人生の軌跡を生成する
+    指定地域の公開データを使ってランダムに人生の軌跡を生成する
     """
     
-    def __init__(self, data_dir: Optional[str] = None):
+    def __init__(self, data_dir: Optional[str] = None, region: str = "hokkaido"):
         """
         初期化
         
         Args:
             data_dir: データファイルが格納されているディレクトリ
                      Noneの場合はデフォルトのdataフォルダ
+            region: 地域識別子 ("hokkaido" または "tokyo")
         """
+        self.region = region
+        if region not in REGION_CONFIG:
+            raise ValueError(f"未対応の地域: {region}。対応地域: {list(REGION_CONFIG.keys())}")
+        
+        self.region_name = REGION_CONFIG[region]["name"]
+        
         # データローダーの初期化
-        self.data_loader = DataLoader(Path(data_dir) if data_dir else None)
+        self.data_loader = DataLoader(Path(data_dir) if data_dir else None, region=region)
         self.data_loader.load_all()
         
         # 各シミュレーターの初期化
@@ -39,6 +46,9 @@ class HokkaidoLifeSimulator:
             workers_by_gender=self.data_loader.workers_by_gender,
             workers_by_industry_gender=self.data_loader.workers_by_industry_gender,
             workers_by_industry=self.data_loader.workers_by_industry,
+            income_by_city=self.data_loader.income_by_city,
+            education_level_by_gender=self.data_loader.education_level_by_gender,
+            region=region,
         )
         
         self.education_sim = EducationSimulator(
@@ -47,6 +57,8 @@ class HokkaidoLifeSimulator:
             university_rates=self.data_loader.university_rates,
             university_destinations=self.data_loader.university_destinations,
             universities_by_prefecture=self.data_loader.universities_by_prefecture,
+            parent_education_effect=self.data_loader.parent_education_effect,
+            parent_income_effect=self.data_loader.parent_income_effect,
         )
         
         self.career_sim = CareerSimulator(
@@ -63,7 +75,7 @@ class HokkaidoLifeSimulator:
         # スコア計算・SNS生成・フォーマッターの初期化
         self.scorer = LifeScorer()
         self.sns_generator = SNSReactionGenerator()
-        self.formatter = LifeFormatter()
+        self.formatter = LifeFormatter(region=region)
     
     def generate_life(self) -> Dict[str, Any]:
         """
@@ -76,33 +88,71 @@ class HokkaidoLifeSimulator:
         gender = self.birth_sim.select_gender()
         birth_city = self.birth_sim.select_birth_city()
         
+        # 世帯年収（出生地に基づく）
+        household_income = self.birth_sim.select_household_income(birth_city)
+        
         # 両親の職業
         father_industry = self.birth_sim.select_parent_industry("男性")
         mother_industry = self.birth_sim.select_parent_industry("女性")
         
-        # 高校進学
-        went_to_high_school = self.education_sim.decide_high_school(birth_city)
+        # 両親の最終学歴
+        father_education = self.birth_sim.select_parent_education("男性")
+        mother_education = self.birth_sim.select_parent_education("女性")
+        
+        # 高校進学（親学歴・世帯年収を考慮）
+        went_to_high_school = self.education_sim.decide_high_school(
+            birth_city,
+            father_education=father_education,
+            mother_education=mother_education,
+            household_income=household_income
+        )
         high_school_name = self.education_sim.select_high_school_name(birth_city) if went_to_high_school else None
         
-        # 大学進学
-        went_to_university = self.education_sim.decide_university(birth_city, went_to_high_school)
+        # 大学進学（親学歴・世帯年収を考慮）
+        went_to_university = self.education_sim.decide_university(
+            birth_city,
+            went_to_high_school,
+            father_education=father_education,
+            mother_education=mother_education,
+            household_income=household_income
+        )
         university_destination = self.education_sim.select_university_destination() if went_to_university else None
         university_name = self.education_sim.select_university_name(university_destination) if went_to_university and university_destination else None
         
-        # 就業開始年齢を計算
+        # 専門学校・短大進学（大学に進学しなかった高卒者対象）
+        went_to_vocational_school = self.education_sim.decide_vocational_school(
+            birth_city,
+            went_to_high_school,
+            went_to_university,
+            father_education=father_education,
+            mother_education=mother_education,
+            household_income=household_income
+        )
+        
+        # 就業開始年齢と最終学歴を計算
         if went_to_university:
             start_work_age = 22  # 大卒
+            education_level = "大学卒"
+        elif went_to_vocational_school:
+            start_work_age = 20  # 短大・専門卒
+            education_level = "短大・専門卒"
         elif went_to_high_school:
             start_work_age = 18  # 高卒
+            education_level = "高校卒"
         else:
             start_work_age = 15  # 中卒
+            education_level = "中学卒"
+        
+        # 企業規模と雇用形態を決定（学歴・性別に基づく）
+        company_size = self.career_sim.select_company_size(education_level)
+        employment_type = self.career_sim.select_employment_type(education_level, gender)
         
         # 定年年齢
         retirement_age = self.career_sim.select_retirement_age()
         
         # 死亡
         death_age = self.death_sim.select_death_age()
-        death_cause = self.death_sim.select_death_cause()
+        death_cause = self.death_sim.select_death_cause(death_age)
         
         # 最初の就職先産業
         first_industry = self.career_sim.select_industry(gender)
@@ -142,14 +192,21 @@ class HokkaidoLifeSimulator:
         return {
             "gender": gender,
             "birth_city": birth_city,
+            "household_income": household_income,
             "father_industry": father_industry,
             "mother_industry": mother_industry,
+            "father_education": father_education,
+            "mother_education": mother_education,
             "high_school": went_to_high_school,
             "high_school_name": high_school_name,
             "university": went_to_university,
             "university_destination": university_destination,
             "university_name": university_name,
+            "vocational_school": went_to_vocational_school,  # 専門学校・短大進学
             "start_work_age": start_work_age,
+            "education_level": education_level,  # 最終学歴
+            "company_size": company_size,  # 企業規模（大企業/中企業/小企業）
+            "employment_type": employment_type,  # 雇用形態（正社員/非正規）
             "industry": final_industry,  # 後方互換性のため残す（最終的な産業）
             "first_industry": first_industry,  # 最初の就職先
             "career_history": career_history,  # キャリア履歴
@@ -161,7 +218,7 @@ class HokkaidoLifeSimulator:
     
     def calculate_life_score(self, life: Dict[str, Any]) -> Dict[str, Any]:
         """
-        人生のスコアを計算する
+        人生スコアを計算する（最終学歴、生涯年収、寿命の3要素）
         
         Args:
             life: generate_life()で生成された人生データ
@@ -170,6 +227,30 @@ class HokkaidoLifeSimulator:
             スコア結果の辞書
         """
         return self.scorer.calculate_life_score(life)
+    
+    def calculate_parent_gacha_score(self, life: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        親ガチャスコアを計算する（親の学歴、世帯年収、出生地の3要素）
+        
+        Args:
+            life: generate_life()で生成された人生データ
+            
+        Returns:
+            スコア結果の辞書
+        """
+        return self.scorer.calculate_parent_gacha_score(life)
+    
+    def calculate_all_scores(self, life: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        親ガチャスコアと人生スコアの両方を計算する
+        
+        Args:
+            life: generate_life()で生成された人生データ
+            
+        Returns:
+            両方のスコア結果の辞書
+        """
+        return self.scorer.calculate_all_scores(life)
     
     def generate_sns_reactions(
         self,
@@ -305,3 +386,42 @@ class HokkaidoLifeSimulator:
     @property
     def death_by_cause(self):
         return self.data_loader.death_by_cause
+    
+    @property
+    def income_by_city(self):
+        return self.data_loader.income_by_city
+    
+    @property
+    def education_level_by_gender(self):
+        return self.data_loader.education_level_by_gender
+    
+    @property
+    def parent_education_effect(self):
+        return self.data_loader.parent_education_effect
+    
+    @property
+    def parent_income_effect(self):
+        return self.data_loader.parent_income_effect
+
+
+# 後方互換性のためのエイリアス
+class HokkaidoLifeSimulator(RegionalLifeSimulator):
+    """
+    北海道人生シミュレーター（後方互換性のためのエイリアス）
+    
+    RegionalLifeSimulator(region="hokkaido") と同等
+    """
+    
+    def __init__(self, data_dir: Optional[str] = None):
+        super().__init__(data_dir=data_dir, region="hokkaido")
+
+
+class TokyoLifeSimulator(RegionalLifeSimulator):
+    """
+    東京人生シミュレーター
+    
+    RegionalLifeSimulator(region="tokyo") と同等
+    """
+    
+    def __init__(self, data_dir: Optional[str] = None):
+        super().__init__(data_dir=data_dir, region="tokyo")
