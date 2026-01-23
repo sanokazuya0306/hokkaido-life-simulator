@@ -1,4 +1,7 @@
 # Nixpacks configuration for Railway
+[variables]
+API_URL = "http://localhost:8000"
+
 [phases.setup]
 nixPkgs = ["nodejs-18_x", "python311"]
 aptPkgs = ["curl", "unzip"]
@@ -11,10 +14,9 @@ cmds = [
 
 [phases.build]
 cmds = [
-    "export API_URL=http://localhost:8000",
     "reflex init",
-    "reflex export --no-zip"
+    "API_URL=http://localhost:8000 reflex export --no-zip"
 ]
 
 [start]
-cmd = "chmod +x start.sh && ./start.sh"
+cmd = "bash start.sh"
