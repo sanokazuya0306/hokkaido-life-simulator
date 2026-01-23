@@ -31,11 +31,59 @@ from .constants import (
     # 企業規模・雇用形態関連
     COMPANY_SIZE_SALARY_MULTIPLIER,
     EMPLOYMENT_TYPE_SALARY_MULTIPLIER,
+    # 最終学歴スコアリング（新）
+    get_education_score,
 )
 
 
 class LifeScorer:
     """人生スコアを計算するクラス"""
+    
+    def __init__(self, birthplace_scores: Dict[str, float] = None):
+        """
+        初期化
+        
+        Args:
+            birthplace_scores: 市区町村別の出生地スコア辞書
+                             キー: 市区町村名、値: スコア（0-100）
+        """
+        self.birthplace_scores = birthplace_scores or {}
+    
+    def get_birthplace_score(self, city: str, region: str = "") -> tuple:
+        """
+        市区町村名から出生地スコアを取得
+        
+        Args:
+            city: 市区町村名
+            region: 地域識別子（hokkaido/tokyo）
+            
+        Returns:
+            (スコア, 地域名) のタプル
+        """
+        # 市区町村別スコアがある場合はそれを使用
+        if self.birthplace_scores:
+            # 完全一致を試行
+            if city in self.birthplace_scores:
+                region_name = "東京" if region == "tokyo" else "北海道"
+                return self.birthplace_scores[city], region_name
+            
+            # 札幌市の区の場合、「札幌市○○区」形式でも検索
+            if city.endswith("区") and "札幌" not in city:
+                sapporo_city = f"札幌市{city}"
+                if sapporo_city in self.birthplace_scores:
+                    return self.birthplace_scores[sapporo_city], "北海道"
+        
+        # 市区町村別スコアがない場合はデフォルト（旧方式）
+        if region == "tokyo":
+            return BIRTHPLACE_SCORES["東京"], "東京"
+        elif region == "hokkaido":
+            return BIRTHPLACE_SCORES["北海道"], "北海道"
+        else:
+            # region情報がない場合は都市名から推定
+            if "東京" in city or (city.endswith("区") and "札幌" not in city):
+                return BIRTHPLACE_SCORES["東京"], "東京"
+            else:
+                return BIRTHPLACE_SCORES["北海道"], "北海道"
     
     def calculate_parent_gacha_score(self, life: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -80,31 +128,64 @@ class LifeScorer:
             "source": "厚生労働省「国民生活基礎調査」"
         }
         
-        # 3. 出生地スコア（北海道か東京か）
+        # 3. 出生地スコア（市区町村別）
         birth_city = life.get("birth_city", "")
-        # 地域判定（東京都内か北海道か）
-        if "東京" in birth_city or "区" in birth_city:
-            birthplace_score = BIRTHPLACE_SCORES["東京"]
-            region_name = "東京"
-        else:
-            birthplace_score = BIRTHPLACE_SCORES["北海道"]
-            region_name = "北海道"
+        region = life.get("region", "")  # シミュレーター実行時の地域設定
+        
+        # 市区町村別スコアを取得
+        birthplace_score, region_name = self.get_birthplace_score(birth_city, region)
         
         scores["birthplace"] = {
             "score": birthplace_score,
             "max_score": 100,
             "label": "出生地",
             "value": f"{birth_city}（{region_name}）",
-            "reason": f"{region_name}生まれ（教育・就職機会の地域格差）",
-            "source": "厚生労働省「一般職業紹介状況」"
+            "reason": f"{birth_city}生まれ（世帯年収・大学進学率・有効求人倍率の複合指標）",
+            "source": "総務省「住宅・土地統計調査」、文部科学省「学校基本調査」、厚生労働省「一般職業紹介状況」"
         }
         
-        # 総合スコア計算（3要素の加重平均）
-        # 親の学歴40%、世帯年収40%、出生地20%
+        # 総合スコア計算（極端な値の影響を強化）
+        # 基本: 親の学歴40%、世帯年収40%、出生地20%
+        # 極端な値がある場合は影響を強める（高い方優先）
+
+        # 極端な値の閾値
+        HIGH_THRESHOLD = 85  # これ以上は「極端に高い」
+        LOW_THRESHOLD = 15   # これ以下は「極端に低い」
+
+        # デフォルトの重み
+        edu_weight = 0.40
+        income_weight = 0.40
+        birthplace_weight = 0.20
+
+        # 学歴と年収の最高値を確認
+        max_score = max(parent_edu_score, income_score)
+        min_score = min(parent_edu_score, income_score)
+
+        # 極端に高い値がある場合、高い方の影響を強める（高い方優先）
+        if max_score >= HIGH_THRESHOLD:
+            if parent_edu_score >= income_score:
+                # 学歴が高い方 → 学歴の重みを上げる
+                edu_weight = 0.55
+                income_weight = 0.25
+            else:
+                # 年収が高い方 → 年収の重みを上げる
+                edu_weight = 0.25
+                income_weight = 0.55
+        # 極端に高い値がなく、極端に低い値がある場合、低い方の影響を強める
+        elif min_score <= LOW_THRESHOLD:
+            if parent_edu_score <= income_score:
+                # 学歴が低い方 → 学歴の重みを上げる（低スコア方向に引っ張る）
+                edu_weight = 0.55
+                income_weight = 0.25
+            else:
+                # 年収が低い方 → 年収の重みを上げる（低スコア方向に引っ張る）
+                edu_weight = 0.25
+                income_weight = 0.55
+
         total_score = (
-            parent_edu_score * 0.40 +
-            income_score * 0.40 +
-            birthplace_score * 0.20
+            parent_edu_score * edu_weight +
+            income_score * income_weight +
+            birthplace_score * birthplace_weight
         )
         
         # ランク判定
@@ -123,9 +204,11 @@ class LifeScorer:
         """
         生涯年収を計算する（万円）
         定年前に死亡した場合は、按分計算を行う
+        起業家・経営者ルートの場合は追加の収入倍率を適用
         
         計算式:
-        生涯年収 = 基準生涯年収 × 勤務年数比率 × 産業補正 × 性別補正 × 企業規模補正 × 雇用形態補正
+        生涯年収 = 基準生涯年収 × 勤務年数比率 × 産業補正 × 性別補正 
+                  × 企業規模補正 × 雇用形態補正 × 起業家/役員補正
         
         Args:
             life: generate_life()で生成された人生データ
@@ -134,7 +217,10 @@ class LifeScorer:
             dict: 生涯年収（万円）と各補正係数の詳細
         """
         # 最終学歴を判定
-        if life.get("university"):
+        if life.get("graduate_school"):
+            education_level = "大学院卒"
+            start_work_age = 24
+        elif life.get("university"):
             education_level = "大学卒"
             start_work_age = 22
         elif life.get("vocational_school"):
@@ -202,6 +288,40 @@ class LifeScorer:
         )
         lifetime_income *= employment_type_multiplier
         
+        # 大学ランクによる補正（Sランク大学卒は年収が高い傾向）
+        university_rank = life.get("university_rank")
+        university_rank_multiplier = 1.0
+        if life.get("university") and university_rank:
+            university_rank_multipliers = {
+                "S": 1.15,  # 難関大卒: +15%
+                "A": 1.08,  # 上位大卒: +8%
+                "B": 1.00,  # 中堅大卒: 基準
+                "C": 0.95,  # 標準大卒: -5%
+                "D": 0.92,  # その他大卒: -8%
+            }
+            university_rank_multiplier = university_rank_multipliers.get(university_rank, 1.0)
+            lifetime_income *= university_rank_multiplier
+        
+        # 起業家・経営者ルートによる補正
+        entrepreneur_info = life.get("entrepreneur_info")
+        executive_info = life.get("executive_info")
+        
+        entrepreneur_multiplier = 1.0
+        entrepreneur_label = None
+        executive_multiplier = 1.0
+        executive_label = None
+        
+        # 起業家の場合（役員より優先）
+        if entrepreneur_info and entrepreneur_info.get("is_entrepreneur"):
+            entrepreneur_multiplier = entrepreneur_info.get("income_multiplier", 1.0)
+            entrepreneur_label = entrepreneur_info.get("success_tier")
+            lifetime_income *= entrepreneur_multiplier
+        # 役員の場合
+        elif executive_info and executive_info.get("is_executive"):
+            executive_multiplier = executive_info.get("income_multiplier", 1.0)
+            executive_label = executive_info.get("executive_level")
+            lifetime_income *= executive_multiplier
+        
         return {
             "total": round(lifetime_income, 0),
             "base_income": base_income,
@@ -213,6 +333,13 @@ class LifeScorer:
             "company_size_multiplier": company_size_multiplier,
             "employment_type": employment_type,
             "employment_type_multiplier": employment_type_multiplier,
+            "university_rank": university_rank,
+            "university_rank_multiplier": university_rank_multiplier,
+            # 起業家・経営者関連
+            "entrepreneur_multiplier": entrepreneur_multiplier,
+            "entrepreneur_label": entrepreneur_label,
+            "executive_multiplier": executive_multiplier,
+            "executive_label": executive_label,
         }
     
     def calculate_life_score(self, life: Dict[str, Any]) -> Dict[str, Any]:
@@ -228,8 +355,10 @@ class LifeScorer:
         """
         scores = {}
         
-        # 1. 最終学歴スコア
-        if life.get("university"):
+        # 1. 最終学歴スコア（パーセンタイルベース）
+        if life.get("graduate_school"):
+            education_level = "大学院卒"
+        elif life.get("university"):
             education_level = "大学卒"
         elif life.get("vocational_school"):
             education_level = "短大・専門卒"
@@ -238,14 +367,46 @@ class LifeScorer:
         else:
             education_level = "中学卒"
         
-        education_score = EDUCATION_SCORES[education_level]
+        # 大学ランクと大学名を取得
+        university_rank = life.get("university_rank")
+        university_name = life.get("university_name")
+        
+        # パーセンタイルベースのスコア計算
+        education_score = get_education_score(
+            education_level=education_level,
+            university_rank=university_rank,
+            university_name=university_name,
+        )
+        
+        # 表示用の値を作成
+        if education_level == "大学院卒" and university_name:
+            if isinstance(university_name, dict):
+                uni_name = university_name.get("name", "")
+            else:
+                uni_name = university_name
+            if university_rank:
+                education_display = f"{education_level}（{uni_name}、{university_rank}ランク）"
+            else:
+                education_display = f"{education_level}（{uni_name}）"
+        elif education_level == "大学卒" and university_name:
+            if isinstance(university_name, dict):
+                uni_name = university_name.get("name", "")
+            else:
+                uni_name = university_name
+            if university_rank:
+                education_display = f"{education_level}（{uni_name}、{university_rank}ランク）"
+            else:
+                education_display = f"{education_level}（{uni_name}）"
+        else:
+            education_display = education_level
+        
         scores["education"] = {
             "score": education_score,
             "max_score": 100,
             "label": "最終学歴",
-            "value": education_level,
-            "reason": f"{education_level}（生涯賃金比較に基づく）",
-            "source": "労働政策研究・研修機構「ユースフル労働統計」"
+            "value": education_display,
+            "reason": f"{education_display}（パーセンタイルベースの統計的スコアリング）",
+            "source": "文部科学省「学校基本調査」・2020年国勢調査に基づく"
         }
         
         # 2. 生涯年収スコア

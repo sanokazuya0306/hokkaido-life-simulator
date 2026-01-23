@@ -2,10 +2,17 @@
 死亡シミュレーター
 
 死亡年齢と死因の決定を担当
+
+年代別死因分布（厚生労働省 人口動態統計 2024年に基づく）:
+- 10-39歳: 自殺が死因第1位（G7で日本のみの特徴）
+- 40歳以降: 悪性新生物（がん）が第1位
+- 90歳以上: 老衰が第1位に上昇
 """
 
 import random
 from typing import Dict, List, Any
+
+from ..constants.scores import AGE_BASED_DEATH_CAUSES, get_age_group_for_death_cause
 
 
 class DeathSimulator:
@@ -21,7 +28,7 @@ class DeathSimulator:
         
         Args:
             death_by_age: 年齢別死亡者数データ
-            death_by_cause: 死因別死亡者数データ
+            death_by_cause: 死因別死亡者数データ（フォールバック用）
         """
         self.death_by_age = death_by_age
         self.death_by_cause = death_by_cause
@@ -51,7 +58,45 @@ class DeathSimulator:
     
     def select_death_cause(self, death_age: int = None) -> str:
         """
-        死因をランダムに選択（死因別死亡者数に基づく重み付き選択）
+        年代別の死因分布に基づいて死因を選択
+        
+        厚生労働省「人口動態統計」2024年のデータに基づき、
+        年代ごとに異なる死因分布から重み付きランダム選択を行う。
+        
+        主な特徴:
+        - 10-39歳: 自殺が第1位（約40-50%）
+        - 40歳以降: 悪性新生物が第1位（約35-45%）
+        - 90歳以上: 老衰が第1位（約30%）
+        
+        Args:
+            death_age: 死亡年齢
+        
+        Returns:
+            死因
+        """
+        # 年代グループを決定
+        if death_age is None:
+            age_group = "70-79"  # デフォルトは高齢期
+        else:
+            age_group = get_age_group_for_death_cause(death_age)
+        
+        # 年代別死因分布を取得
+        causes_distribution = AGE_BASED_DEATH_CAUSES.get(age_group)
+        
+        if not causes_distribution:
+            # フォールバック: 旧方式（death_by_causeデータ）を使用
+            return self._select_death_cause_fallback(death_age)
+        
+        # 重み付きランダム選択
+        causes = list(causes_distribution.keys())
+        weights = list(causes_distribution.values())
+        
+        selected_cause = random.choices(causes, weights=weights, k=1)[0]
+        return selected_cause
+    
+    def _select_death_cause_fallback(self, death_age: int = None) -> str:
+        """
+        フォールバック: 旧方式の死因選択（death_by_causeデータ使用）
         
         Args:
             death_age: 死亡年齢（老衰は80歳以上のみ許可）

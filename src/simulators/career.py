@@ -15,6 +15,10 @@ from typing import Dict, List, Any, Optional
 from ..constants import (
     COMPANY_SIZE_DISTRIBUTION_BY_EDUCATION,
     EMPLOYMENT_TYPE_DISTRIBUTION,
+    ENTREPRENEUR_PROBABILITY,
+    ENTREPRENEUR_SUCCESS_TIERS,
+    EXECUTIVE_PROMOTION_PROBABILITY,
+    EXECUTIVE_INCOME_TIERS,
 )
 
 
@@ -309,14 +313,16 @@ class CareerSimulator:
             "final_industry": last_industry,
         }
     
-    def select_company_size(self, education_level: str) -> str:
+    def select_company_size(self, education_level: str, university_rank: str = None) -> str:
         """
-        企業規模を学歴に基づいてランダムに選択
+        企業規模を学歴・大学ランクに基づいてランダムに選択
         
         大卒は大企業への就職率が高く、中卒は小企業が中心となる
+        難関大学卒はさらに大企業率が上昇
         
         Args:
             education_level: 最終学歴（"大学卒", "高校卒", "中学卒"）
+            university_rank: 大学ランク（"S", "A", "B", "C", "D"）。大卒の場合のみ
             
         Returns:
             企業規模（"大企業", "中企業", "小企業"）
@@ -324,7 +330,24 @@ class CareerSimulator:
         distribution = COMPANY_SIZE_DISTRIBUTION_BY_EDUCATION.get(
             education_level,
             COMPANY_SIZE_DISTRIBUTION_BY_EDUCATION["default"]
-        )
+        ).copy()  # コピーして変更
+        
+        # 大学ランクによる大企業率の補正（大卒の場合のみ）
+        if education_level == "大学卒" and university_rank:
+            if university_rank == "S":
+                # Sランク大学卒: 大企業率+20ポイント
+                distribution["大企業"] = distribution.get("大企業", 35) + 20
+                distribution["小企業"] = max(5, distribution.get("小企業", 25) - 15)
+                distribution["中企業"] = max(10, distribution.get("中企業", 40) - 5)
+            elif university_rank == "A":
+                # Aランク大学卒: 大企業率+10ポイント
+                distribution["大企業"] = distribution.get("大企業", 35) + 10
+                distribution["小企業"] = max(10, distribution.get("小企業", 25) - 10)
+            elif university_rank == "D":
+                # Dランク大学卒: 大企業率-10ポイント
+                distribution["大企業"] = max(10, distribution.get("大企業", 35) - 10)
+                distribution["中企業"] = distribution.get("中企業", 40) + 5
+                distribution["小企業"] = distribution.get("小企業", 25) + 5
         
         # 重み付きランダム選択
         total = sum(distribution.values())
@@ -372,3 +395,151 @@ class CareerSimulator:
                 return emp_type
         
         return "正社員"  # フォールバック
+    
+    def simulate_entrepreneurship(
+        self,
+        education_level: str,
+        university_rank: str = None,
+    ) -> Dict[str, Any]:
+        """
+        起業するかどうかと、起業した場合の成功度合いをシミュレーション
+        
+        出典:
+        - 総務省「令和4年就業構造基本調査」: 自営業主は全有業者の7.6%
+        - 日本政策金融公庫「2024年度新規開業実態調査」
+        - 中小企業庁「中小企業白書」2024年
+        
+        Args:
+            education_level: 最終学歴
+            university_rank: 大学ランク（S/A/B/C/D）
+            
+        Returns:
+            dict: {
+                "is_entrepreneur": bool,
+                "success_tier": str or None,
+                "income_multiplier": float,
+                "description": str or None,
+            }
+        """
+        # 起業確率を取得
+        base_probability = ENTREPRENEUR_PROBABILITY.get(
+            education_level,
+            ENTREPRENEUR_PROBABILITY["default"]
+        )
+        
+        # 大学ランクによる補正（高ランク大学卒は起業率が高い傾向）
+        if university_rank == "S":
+            base_probability *= 1.5  # Sランク大学卒は起業率1.5倍
+        elif university_rank == "A":
+            base_probability *= 1.2  # Aランク大学卒は起業率1.2倍
+        
+        # 起業するかどうかを判定
+        if random.random() * 100 >= base_probability:
+            return {
+                "is_entrepreneur": False,
+                "success_tier": None,
+                "income_multiplier": 1.0,
+                "description": None,
+            }
+        
+        # 起業した場合、成功度合いを決定
+        rand = random.random()
+        cumulative = 0
+        
+        for tier in ENTREPRENEUR_SUCCESS_TIERS:
+            cumulative += tier["probability"]
+            if rand < cumulative:
+                return {
+                    "is_entrepreneur": True,
+                    "success_tier": tier["label"],
+                    "income_multiplier": tier["multiplier"],
+                    "description": tier["description"],
+                }
+        
+        # フォールバック（最後のティア）
+        last_tier = ENTREPRENEUR_SUCCESS_TIERS[-1]
+        return {
+            "is_entrepreneur": True,
+            "success_tier": last_tier["label"],
+            "income_multiplier": last_tier["multiplier"],
+            "description": last_tier["description"],
+        }
+    
+    def simulate_executive_promotion(
+        self,
+        education_level: str,
+        university_rank: str = None,
+        company_size: str = "中企業",
+    ) -> Dict[str, Any]:
+        """
+        役員に昇進するかどうかをシミュレーション
+        
+        大企業勤務の場合のみ役員昇進の可能性がある
+        
+        出典:
+        - デロイト「役員報酬サーベイ2025年度版」
+        - 上場企業役員数約50,000人 / 大企業正社員約500万人
+        
+        Args:
+            education_level: 最終学歴
+            university_rank: 大学ランク（S/A/B/C/D）
+            company_size: 企業規模（大企業/中企業/小企業）
+            
+        Returns:
+            dict: {
+                "is_executive": bool,
+                "executive_level": str or None,
+                "income_multiplier": float,
+                "description": str or None,
+            }
+        """
+        # 大企業以外は役員昇進なし（中小企業の場合は別途経営者ルートあり）
+        if company_size != "大企業":
+            return {
+                "is_executive": False,
+                "executive_level": None,
+                "income_multiplier": 1.0,
+                "description": None,
+            }
+        
+        # 学歴と大学ランクに基づく昇進確率を取得
+        if education_level in ["大学院卒", "大学卒"] and university_rank:
+            key = f"{education_level}_{university_rank}"
+            base_probability = EXECUTIVE_PROMOTION_PROBABILITY.get(
+                key,
+                EXECUTIVE_PROMOTION_PROBABILITY["default"]
+            )
+        else:
+            base_probability = EXECUTIVE_PROMOTION_PROBABILITY["default"]
+        
+        # 役員に昇進するかどうかを判定
+        if random.random() * 100 >= base_probability:
+            return {
+                "is_executive": False,
+                "executive_level": None,
+                "income_multiplier": 1.0,
+                "description": None,
+            }
+        
+        # 役員に昇進した場合、レベルを決定
+        rand = random.random()
+        cumulative = 0
+        
+        for tier in EXECUTIVE_INCOME_TIERS:
+            cumulative += tier["probability"]
+            if rand < cumulative:
+                return {
+                    "is_executive": True,
+                    "executive_level": tier["label"],
+                    "income_multiplier": tier["multiplier"],
+                    "description": tier["description"],
+                }
+        
+        # フォールバック（最初のティア）
+        first_tier = EXECUTIVE_INCOME_TIERS[0]
+        return {
+            "is_executive": True,
+            "executive_level": first_tier["label"],
+            "income_multiplier": first_tier["multiplier"],
+            "description": first_tier["description"],
+        }

@@ -83,12 +83,21 @@ class LifeFormatter:
         education_parts = []
         if life["high_school"]:
             high_school_name = life.get("high_school_name", "地元の高校")
+            # 辞書型の場合は name キーを取り出す
+            if isinstance(high_school_name, dict):
+                high_school_name = high_school_name.get("name", "地元の高校")
             education_parts.append(f"{high_school_name}に進学")
         
         if life["university"] and life.get("university_destination"):
             university_dest = life["university_destination"]
             university_name = life.get("university_name", f"{university_dest}の大学")
+            # 辞書型の場合は name キーを取り出す
+            if isinstance(university_name, dict):
+                university_name = university_name.get("name", f"{university_dest}の大学")
             education_parts.append(f"{university_dest}の{university_name}に進学")
+            # 大学院進学
+            if life.get("graduate_school"):
+                education_parts.append("大学院に進学")
         elif life.get("vocational_school"):
             # 専門学校・短大に進学した場合
             education_parts.append("専門学校に進学")
@@ -103,7 +112,9 @@ class LifeFormatter:
         # 雇用形態の表示を調整（正社員→正社員、非正規→非正規社員）
         employment_display = "正社員" if employment_type == "正社員" else "非正規社員"
         
-        if life["university"]:
+        if life.get("graduate_school"):
+            job_str = f"大学院修了後、{first_industry}の{company_size}に{employment_display}として就職"
+        elif life["university"]:
             job_str = f"大学卒業後、{first_industry}の{company_size}に{employment_display}として就職"
         elif life.get("vocational_school"):
             job_str = f"専門学校卒業後、{first_industry}の{company_size}に{employment_display}として就職"
@@ -190,11 +201,13 @@ class LifeFormatter:
     
     def _shorten_education(self, education: str) -> str:
         """学歴を短縮形に変換"""
-        # 「大学卒」→「大」、「高校卒」→「高」、「中学卒」→「中」、「短大・専門」→「専」
-        if "大学" in education or "大卒" in education:
+        # 「大学院」→「院」、「大学卒」→「大」、「高校卒」→「高」、「中学卒」→「中」、「短大・専門」→「短大・専門」
+        if "大学院" in education or "院卒" in education:
+            return "院"
+        elif "大学" in education or "大卒" in education:
             return "大"
         elif "短大" in education or "専門" in education:
-            return "専"
+            return "短大・専門"
         elif "高校" in education or "高卒" in education:
             return "高"
         elif "中学" in education or "中卒" in education:

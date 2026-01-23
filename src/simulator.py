@@ -73,7 +73,7 @@ class RegionalLifeSimulator:
         )
         
         # スコア計算・SNS生成・フォーマッターの初期化
-        self.scorer = LifeScorer()
+        self.scorer = LifeScorer(birthplace_scores=self.data_loader.birthplace_scores)
         self.sns_generator = SNSReactionGenerator()
         self.formatter = LifeFormatter(region=region)
     
@@ -84,6 +84,8 @@ class RegionalLifeSimulator:
         Returns:
             人生データの辞書
         """
+        from .deviation_value import DeviationValueCalculator
+        
         # 性別と出生地
         gender = self.birth_sim.select_gender()
         birth_city = self.birth_sim.select_birth_city()
@@ -99,6 +101,14 @@ class RegionalLifeSimulator:
         father_education = self.birth_sim.select_parent_education("男性")
         mother_education = self.birth_sim.select_parent_education("女性")
         
+        # 個人の偏差値を計算（環境要因に基づく）
+        deviation_value = DeviationValueCalculator.calculate_individual_deviation(
+            father_education=father_education,
+            mother_education=mother_education,
+            household_income=household_income,
+            birth_city=birth_city,
+        )
+        
         # 高校進学（親学歴・世帯年収を考慮）
         went_to_high_school = self.education_sim.decide_high_school(
             birth_city,
@@ -106,18 +116,41 @@ class RegionalLifeSimulator:
             mother_education=mother_education,
             household_income=household_income
         )
-        high_school_name = self.education_sim.select_high_school_name(birth_city) if went_to_high_school else None
         
-        # 大学進学（親学歴・世帯年収を考慮）
+        # 高校選択（偏差値に基づく）
+        high_school_name = None
+        high_school_deviation = None
+        if went_to_high_school:
+            high_school_name, high_school_deviation = self.education_sim.select_high_school_name(
+                birth_city, deviation_value
+            )
+            # 高校での学力成長をシミュレート
+            graduation_deviation = DeviationValueCalculator.simulate_academic_growth(
+                deviation_value, high_school_deviation
+            )
+        else:
+            graduation_deviation = deviation_value
+        
+        # 大学進学（親学歴・世帯年収・高校偏差値を考慮）
         went_to_university = self.education_sim.decide_university(
             birth_city,
             went_to_high_school,
             father_education=father_education,
             mother_education=mother_education,
-            household_income=household_income
+            household_income=household_income,
+            high_school_deviation_value=high_school_deviation if went_to_high_school else None
         )
-        university_destination = self.education_sim.select_university_destination() if went_to_university else None
-        university_name = self.education_sim.select_university_name(university_destination) if went_to_university and university_destination else None
+        
+        # 大学選択（卒業時偏差値に基づく）
+        university_destination = None
+        university_name = None
+        university_rank = None
+        if went_to_university:
+            university_destination = self.education_sim.select_university_destination()
+            if university_destination:
+                university_name, university_rank = self.education_sim.select_university_name(
+                    university_destination, graduation_deviation
+                )
         
         # 専門学校・短大進学（大学に進学しなかった高卒者対象）
         went_to_vocational_school = self.education_sim.decide_vocational_school(
@@ -128,9 +161,22 @@ class RegionalLifeSimulator:
             mother_education=mother_education,
             household_income=household_income
         )
-        
+
+        # 大学院進学（大学に進学した場合のみ）
+        went_to_graduate_school = self.education_sim.decide_graduate_school(
+            went_to_university=went_to_university,
+            university_rank=university_rank,
+            gender=gender,
+            father_education=father_education,
+            mother_education=mother_education,
+            household_income=household_income,
+        )
+
         # 就業開始年齢と最終学歴を計算
-        if went_to_university:
+        if went_to_graduate_school:
+            start_work_age = 24  # 大学院卒（修士）
+            education_level = "大学院卒"
+        elif went_to_university:
             start_work_age = 22  # 大卒
             education_level = "大学卒"
         elif went_to_vocational_school:
@@ -143,9 +189,30 @@ class RegionalLifeSimulator:
             start_work_age = 15  # 中卒
             education_level = "中学卒"
         
-        # 企業規模と雇用形態を決定（学歴・性別に基づく）
-        company_size = self.career_sim.select_company_size(education_level)
+        # 企業規模と雇用形態を決定（学歴・性別・大学ランクに基づく）
+        company_size = self.career_sim.select_company_size(education_level, university_rank)
         employment_type = self.career_sim.select_employment_type(education_level, gender)
+        
+        # 起業家シミュレーション（学歴・大学ランクに基づく）
+        entrepreneur_info = self.career_sim.simulate_entrepreneurship(
+            education_level=education_level,
+            university_rank=university_rank,
+        )
+        
+        # 役員昇進シミュレーション（起業家でない場合のみ）
+        if entrepreneur_info.get("is_entrepreneur"):
+            executive_info = {
+                "is_executive": False,
+                "executive_level": None,
+                "income_multiplier": 1.0,
+                "description": None,
+            }
+        else:
+            executive_info = self.career_sim.simulate_executive_promotion(
+                education_level=education_level,
+                university_rank=university_rank,
+                company_size=company_size,
+            )
         
         # 定年年齢
         retirement_age = self.career_sim.select_retirement_age()
@@ -190,6 +257,7 @@ class RegionalLifeSimulator:
         final_industry = career_summary.get("final_industry") or first_industry
         
         return {
+            "region": self.region,  # 地域識別子（hokkaido/tokyo）
             "gender": gender,
             "birth_city": birth_city,
             "household_income": household_income,
@@ -197,16 +265,23 @@ class RegionalLifeSimulator:
             "mother_industry": mother_industry,
             "father_education": father_education,
             "mother_education": mother_education,
+            "deviation_value": deviation_value,  # 個人の偏差値（初期）
             "high_school": went_to_high_school,
             "high_school_name": high_school_name,
+            "high_school_deviation": high_school_deviation,  # 高校の偏差値
+            "graduation_deviation": graduation_deviation,  # 高校卒業時の偏差値
             "university": went_to_university,
             "university_destination": university_destination,
             "university_name": university_name,
+            "university_rank": university_rank,  # 大学のランク（S/A/B/C/D）
             "vocational_school": went_to_vocational_school,  # 専門学校・短大進学
+            "graduate_school": went_to_graduate_school,  # 大学院進学
             "start_work_age": start_work_age,
             "education_level": education_level,  # 最終学歴
             "company_size": company_size,  # 企業規模（大企業/中企業/小企業）
             "employment_type": employment_type,  # 雇用形態（正社員/非正規）
+            "entrepreneur_info": entrepreneur_info,  # 起業家情報
+            "executive_info": executive_info,  # 役員昇進情報
             "industry": final_industry,  # 後方互換性のため残す（最終的な産業）
             "first_industry": first_industry,  # 最初の就職先
             "career_history": career_history,  # キャリア履歴
