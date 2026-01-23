@@ -6,12 +6,16 @@ Reflex版からの移植: 既存のcore/とsrc/のロジックを再利用
 
 import streamlit as st
 import sys
+import os
 from pathlib import Path
 
-# プロジェクトルートをパスに追加
-_project_root = Path(__file__).parent
+# プロジェクトルートをパスに追加（Streamlit Cloud対応）
+_project_root = Path(__file__).parent.resolve()
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
+
+# 環境変数でも設定（念のため）
+os.environ['PYTHONPATH'] = str(_project_root) + os.pathsep + os.environ.get('PYTHONPATH', '')
 
 from core import GachaService, get_gacha_service
 from src.correlation_visualizer import create_correlation_sankey, get_correlation_summary

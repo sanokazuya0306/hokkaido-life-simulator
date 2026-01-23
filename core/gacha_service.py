@@ -12,7 +12,7 @@ from pathlib import Path
 
 # srcモジュールからインポート
 import sys
-_base_path = Path(__file__).parent.parent
+_base_path = Path(__file__).parent.parent.resolve()
 if str(_base_path) not in sys.path:
     sys.path.insert(0, str(_base_path))
 
