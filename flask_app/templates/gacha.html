@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="gacha-container">
+    <!-- 地域セレクタ -->
+    <div class="region-selector">
+        <a href="{{ url_for('set_region', region='hokkaido') }}" 
+           class="region-btn region-btn-left {{ 'region-btn-active' if region == 'hokkaido' else 'region-btn-inactive' }}">
+            北海道
+        </a>
+        <a href="{{ url_for('set_region', region='tokyo') }}" 
+           class="region-btn region-btn-right {{ 'region-btn-active' if region == 'tokyo' else 'region-btn-inactive' }}">
+            東京
+        </a>
+    </div>
+    
+    <!-- スライダー -->
+    <div class="slider-container">
+        <form id="slider-form" action="{{ url_for('set_num_people') }}" method="POST">
+            <div class="slider-value" id="slider-display">{{ num_people }}</div>
+            <input type="range" name="num_people" id="num-slider" 
+                   min="1" max="20" value="{{ num_people }}"
+                   oninput="updateSlider(this.value)">
+        </form>
+    </div>
+    
+    <!-- ガチャボタン -->
+    <a href="{{ url_for('pull_gacha') }}" class="gacha-button">
+        ガチャを引く
+    </a>
+    
+    <!-- 情報ボタン -->
+    <div class="info-buttons">
+        <button class="info-btn" onclick="showRatesModal()">確率</button>
+        <button class="info-btn" onclick="showCorrelationModal()">相関図</button>
+        <button class="info-btn" onclick="showDatasetModal()">データ</button>
+    </div>
+</div>
+
+<!-- 確率モーダル -->
+<div class="modal-overlay" id="rates-modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <span class="modal-title">🎲 ガチャ確率</span>
+            <button class="modal-close" onclick="closeModal('rates-modal')">&times;</button>
+        </div>
+        <div id="rates-content"></div>
+        <p style="margin-top: 16px; font-size: 14px; color: #666;">
+            確率は10,000回シミュレーション（2026年1月計算、寿命40%・生涯年収35%・学歴25%）に基づきます。
+        </p>
+    </div>
+</div>
+
+<!-- 相関図モーダル -->
+<div class="modal-overlay" id="correlation-modal">
+    <div class="modal-content" style="max-width: 900px;">
+        <div class="modal-header">
+            <span class="modal-title">📊 相関図</span>
+            <button class="modal-close" onclick="closeModal('correlation-modal')">&times;</button>
+        </div>
+        <p>出生地 → 世帯年収 → 親の学歴 → 高校進学 → 大学進学 → 就職 → 生涯年収 → 人生ランク</p>
+        <p style="margin-top: 16px;">の相関関係を可視化したサンキーダイアグラムです。</p>
+    </div>
+</div>
+
+<!-- データセットモーダル -->
+<div class="modal-overlay" id="dataset-modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <span class="modal-title">📋 データセット</span>
+            <button class="modal-close" onclick="closeModal('dataset-modal')">&times;</button>
+        </div>
+        <div style="font-size: 14px;">
+            <p style="margin-bottom: 12px;"><strong>📍 市区町村別出生数</strong> - 厚生労働省 (2024年)</p>
+            <p style="margin-bottom: 12px;"><strong>💰 世帯年収分布</strong> - 総務省統計局 (2023年)</p>
+            <p style="margin-bottom: 12px;"><strong>🎓 高校・大学進学率</strong> - 文部科学省 (2024年度)</p>
+            <p style="margin-bottom: 12px;"><strong>🏫 大学進学先都道府県</strong> - 文部科学省 (2024年度)</p>
+            <p style="margin-bottom: 12px;"><strong>📊 最終学歴分布</strong> - 総務省統計局 (2020年)</p>
+            <p style="margin-bottom: 12px;"><strong>🏭 産業別就業者数</strong> - 総務省統計局 (2024年)</p>
+            <p style="margin-bottom: 12px;"><strong>📈 年齢別死亡率</strong> - 厚生労働省 (2023年)</p>
+            <p style="margin-bottom: 12px;"><strong>🏥 死因統計</strong> - 厚生労働省 (2022年)</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function updateSlider(value) {
+    document.getElementById('slider-display').textContent = value;
+}
+
+function showRatesModal() {
+    fetch('/api/rates')
+        .then(response => response.json())
+        .then(data => {
+            let html = `<p style="margin-bottom: 16px;"><strong>${data.region_name}のガチャ確率</strong></p>`;
+            
+            const rankColors = {
+                'SS': '#1a1a1a',
+                'S': '#333333',
+                'A': '#4d4d4d',
+                'B': '#666666',
+                'C': '#808080',
+                'D': '#999999'
+            };
+            
+            for (const [rank, rate] of Object.entries(data.rates)) {
+                const info = data.rank_info[rank];
+                html += `
+                    <div class="rate-item" style="border-left-color: ${rankColors[rank]};">
+                        <div class="rate-rank" style="background: ${rankColors[rank]}20; color: ${rankColors[rank]};">${rank}</div>
+                        <div class="rate-info">
+                            <div class="rate-label">${info.label}</div>
+                            <div class="rate-desc">${info.desc}</div>
+                        </div>
+                        <div class="rate-value" style="color: ${rankColors[rank]};">${rate}</div>
+                    </div>
+                `;
+            }
+            
+            document.getElementById('rates-content').innerHTML = html;
+            document.getElementById('rates-modal').classList.add('active');
+        });
+}
+
+function showCorrelationModal() {
+    document.getElementById('correlation-modal').classList.add('active');
+}
+
+function showDatasetModal() {
+    document.getElementById('dataset-modal').classList.add('active');
+}
+
+function closeModal(id) {
+    document.getElementById(id).classList.remove('active');
+}
+
+// クリックでモーダルを閉じる
+document.querySelectorAll('.modal-overlay').forEach(modal => {
+    modal.addEventListener('click', function(e) {
+        if (e.target === this) {
+            this.classList.remove('active');
+        }
+    });
+});
+</script>
+{% endblock %}

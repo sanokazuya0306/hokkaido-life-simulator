@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+
+{% block content %}
+{% set rank = score_result.get('rank', 'B') %}
+{% set total_score = score_result.get('total_score', 0)|int %}
+{% set rank_label = score_result.get('rank_label', '') %}
+{% set parent_rank = parent_result.get('rank', 'B') %}
+
+<div class="detail-container">
+    <!-- 閉じるボタン -->
+    <a href="{{ url_for('result') }}" class="close-btn">×</a>
+    
+    <!-- 詳細カード -->
+    <div class="detail-card">
+        <!-- 人生ストーリー -->
+        <div class="life-story">{{ life_story }}</div>
+        
+        <!-- 人生ランク表示 -->
+        {% if rank == 'SS' %}
+            {% set display_class = 'rank-display-ss' %}
+            {% set rank_color = '#D8D8D8' %}
+        {% elif rank == 'S' %}
+            {% set display_class = 'rank-display-s' %}
+            {% set rank_color = '#000000' %}
+        {% else %}
+            {% set display_class = 'rank-display-other' %}
+            {% set rank_color = '#000000' %}
+        {% endif %}
+        
+        <div class="rank-display {{ display_class }}">
+            <span class="rank-label" style="color: {{ rank_color }};">人生ランク</span>
+            <span class="rank-value" style="color: {{ rank_color }};">{{ rank }}</span>
+        </div>
+        
+        <!-- 親ガチャランク -->
+        <div class="parent-rank">
+            <span class="parent-rank-label">親ガチャランク</span>
+            <span class="parent-rank-value">{{ parent_rank }}</span>
+        </div>
+        
+        <!-- 展開ボタン -->
+        <button class="expand-btn" onclick="toggleDetails()">
+            <span id="expand-icon">↓</span> 詳細を展開
+        </button>
+        
+        <!-- 詳細セクション（初期非表示） -->
+        <div class="score-section" id="detail-section" style="display: none;">
+            <!-- 総合スコア -->
+            <div class="score-title">{{ total_score }}点「{{ rank_label }}」</div>
+            
+            <!-- 詳細データ -->
+            <div class="section-title">📋 詳細データ</div>
+            <div class="detail-grid">
+                <!-- 出生情報 -->
+                <div class="detail-box">
+                    <h4>👶 出生情報</h4>
+                    <p><strong>性別:</strong> {{ '男性' if life.get('gender') == 'male' else '女性' }}</p>
+                    <p><strong>出生地:</strong> {{ life.get('birth_city', '不明') }}</p>
+                    <p><strong>世帯年収:</strong> {{ life.get('household_income', '不明') }}</p>
+                    <p><strong>父学歴:</strong> {{ format_education(life.get('father_education', '不明')) }}</p>
+                    <p><strong>母学歴:</strong> {{ format_education(life.get('mother_education', '不明')) }}</p>
+                </div>
+                
+                <!-- 学歴・偏差値 -->
+                <div class="detail-box">
+                    <h4>📚 学歴・偏差値</h4>
+                    {% if life.get('deviation_value') %}
+                    <p><strong>個人偏差値:</strong> {{ '%.1f'|format(life.get('deviation_value')) }}</p>
+                    {% endif %}
+                    {% if life.get('high_school') %}
+                        {% set hs_deviation = life.get('high_school_deviation', 0) %}
+                        {% if hs_deviation %}
+                        <p><strong>高校:</strong> {{ hs_name }} (偏差値{{ '%.1f'|format(hs_deviation) }})</p>
+                        {% else %}
+                        <p><strong>高校:</strong> {{ hs_name or '進学' }}</p>
+                        {% endif %}
+                    {% else %}
+                    <p><strong>高校:</strong> 進学せず</p>
+                    {% endif %}
+                    {% if life.get('graduation_deviation') and life.get('deviation_value') %}
+                        {% set growth = life.get('graduation_deviation') - life.get('deviation_value') %}
+                        <p><strong>卒業時偏差値:</strong> {{ '%.1f'|format(life.get('graduation_deviation')) }} ({{ '+%.1f'|format(growth) if growth >= 0 else '%.1f'|format(growth) }})</p>
+                    {% endif %}
+                    {% if life.get('university') %}
+                    <p><strong>大学:</strong> {{ uni_name }}</p>
+                    <p><strong>大学ランク:</strong> {{ life.get('university_rank', '') }}</p>
+                    {% else %}
+                    <p><strong>大学:</strong> 進学せず</p>
+                    {% endif %}
+                </div>
+                
+                <!-- キャリア -->
+                <div class="detail-box">
+                    <h4>💼 キャリア</h4>
+                    <p><strong>企業規模:</strong> {{ life.get('company_size', '不明') }}</p>
+                    <p><strong>雇用形態:</strong> {{ life.get('employment_type', '不明') }}</p>
+                    <p><strong>転職回数:</strong> {{ life.get('career_summary', {}).get('total_job_changes', 0) }}回</p>
+                    <p><strong>死亡年齢:</strong> {{ life.get('death_age', 0) }}歳</p>
+                    <p><strong>死因:</strong> {{ life.get('death_cause', '不明') }}</p>
+                </div>
+            </div>
+            
+            <!-- 人生スコア内訳 -->
+            {% set breakdown = score_result.get('breakdown', {}) %}
+            <div class="section-title">📈 人生スコア内訳</div>
+            <div class="detail-grid">
+                <!-- 寿命 -->
+                {% set lifespan = breakdown.get('lifespan', {}) %}
+                <div class="detail-box">
+                    <h4>寿命 (40%)</h4>
+                    <p><strong>スコア:</strong> {{ '%.1f'|format(lifespan.get('score', 0)) }}点</p>
+                    <p>→ {{ lifespan.get('value', '') }}</p>
+                </div>
+                
+                <!-- 生涯年収 -->
+                {% set income = breakdown.get('lifetime_income', {}) %}
+                <div class="detail-box">
+                    <h4>生涯年収 (35%)</h4>
+                    <p><strong>スコア:</strong> {{ '%.1f'|format(income.get('score', 0)) }}点</p>
+                    <p>→ {{ income.get('value', '') }}</p>
+                </div>
+                
+                <!-- 学歴 -->
+                {% set edu = breakdown.get('education', {}) %}
+                <div class="detail-box">
+                    <h4>学歴 (25%)</h4>
+                    <p><strong>スコア:</strong> {{ '%.1f'|format(edu.get('score', 0)) }}点</p>
+                    <p>→ {{ edu.get('value', '') }}</p>
+                </div>
+            </div>
+            
+            <!-- 親ガチャスコア内訳 -->
+            {% set p_breakdown = parent_result.get('breakdown', {}) %}
+            {% set parent_total = parent_result.get('total_score', 0)|int %}
+            {% set parent_rank_label = parent_result.get('rank_label', '') %}
+            <div class="section-title">📈 親ガチャスコア内訳</div>
+            <p style="text-align: center; margin-bottom: 16px;"><strong>親ガチャ: {{ parent_total }}点「{{ parent_rank_label }}」</strong></p>
+            <div class="detail-grid">
+                <!-- 世帯年収 -->
+                {% set p_income = p_breakdown.get('household_income', {}) %}
+                <div class="detail-box">
+                    <h4>世帯年収 (35%)</h4>
+                    <p><strong>スコア:</strong> {{ '%.1f'|format(p_income.get('score', 0)) }}点</p>
+                    <p>→ {{ p_income.get('value', '') }}</p>
+                </div>
+                
+                <!-- 出生地 -->
+                {% set p_birth = p_breakdown.get('birthplace', {}) %}
+                <div class="detail-box">
+                    <h4>出生地 (35%)</h4>
+                    <p><strong>スコア:</strong> {{ '%.1f'|format(p_birth.get('score', 0)) }}点</p>
+                    <p>→ {{ p_birth.get('value', '') }}</p>
+                </div>
+                
+                <!-- 親の学歴 -->
+                {% set p_edu = p_breakdown.get('parent_education', {}) %}
+                <div class="detail-box">
+                    <h4>親の学歴 (30%)</h4>
+                    <p><strong>スコア:</strong> {{ '%.1f'|format(p_edu.get('score', 0)) }}点</p>
+                    <p>→ {{ p_edu.get('value', '') }}</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleDetails() {
+    const section = document.getElementById('detail-section');
+    const icon = document.getElementById('expand-icon');
+    const btn = document.querySelector('.expand-btn');
+    
+    if (section.style.display === 'none') {
+        section.style.display = 'block';
+        icon.textContent = '↑';
+        btn.innerHTML = '<span id="expand-icon">↑</span> 閉じる';
+    } else {
+        section.style.display = 'none';
+        icon.textContent = '↓';
+        btn.innerHTML = '<span id="expand-icon">↓</span> 詳細を展開';
+    }
+}
+</script>
+{% endblock %}

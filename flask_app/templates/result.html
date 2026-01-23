@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="result-container">
+    <!-- ヘッダー -->
+    <div class="result-header">
+        <a href="{{ url_for('index') }}" class="nav-btn">←</a>
+        <a href="{{ url_for('pull_gacha') }}" class="nav-btn">↺</a>
+    </div>
+    
+    <!-- カードグリッド -->
+    <div class="card-grid">
+        {% for result in score_results %}
+            {% set rank = result.get('rank', 'B') %}
+            {% if rank == 'SS' %}
+                {% set rank_class = 'rank-ss' %}
+            {% elif rank == 'S' %}
+                {% set rank_class = 'rank-s' %}
+            {% else %}
+                {% set rank_class = 'rank-other' %}
+            {% endif %}
+            
+            <a href="{{ url_for('detail', index=loop.index0) }}" class="rank-card {{ rank_class }}">
+                {{ rank }}
+            </a>
+        {% endfor %}
+    </div>
+    
+    <!-- カウンター -->
+    <div class="counter">{{ total_generated }}</div>
+</div>
+{% endblock %}

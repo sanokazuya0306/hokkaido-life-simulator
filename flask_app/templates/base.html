@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>人生ガチャ</title>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;700&family=Zen+Old+Mincho:wght@400;700&family=Roboto:wght@400;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        /* ===== リセット & 基本スタイル ===== */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Zen Kaku Gothic New', sans-serif;
+            background-color: #FFFFFF;
+            min-height: 100vh;
+        }
+        
+        /* ===== ガチャ画面 - Figma準拠 ===== */
+        .gacha-container {
+            width: 100%;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 40px 20px;
+        }
+        
+        /* 地域セレクタ（600x87px） */
+        .region-selector {
+            display: flex;
+            margin-bottom: 60px;
+        }
+        
+        .region-btn {
+            width: 300px;
+            height: 87px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Zen Kaku Gothic New', sans-serif;
+            font-size: 24px;
+            font-weight: 400;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-decoration: none;
+            color: #000000;
+        }
+        
+        .region-btn-left {
+            border-radius: 10px 0 0 10px;
+        }
+        
+        .region-btn-right {
+            border-radius: 0 10px 10px 0;
+        }
+        
+        .region-btn-active {
+            background: rgba(0, 0, 0, 0.1);
+            border: 1px solid rgba(0, 0, 0, 0.2);
+        }
+        
+        .region-btn-inactive {
+            background: #D9D9D9;
+            border: 5px solid rgba(0, 0, 0, 0.2);
+        }
+        
+        .region-btn:hover {
+            opacity: 0.8;
+        }
+        
+        /* スライダー（600px幅） */
+        .slider-container {
+            width: 600px;
+            margin-bottom: 60px;
+        }
+        
+        .slider-label {
+            font-size: 16px;
+            color: #323232;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+        
+        .slider-value {
+            font-size: 48px;
+            font-weight: 700;
+            color: #323232;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+        
+        input[type="range"] {
+            width: 100%;
+            height: 8px;
+            background: rgba(20, 20, 20, 0.38);
+            border-radius: 4px;
+            outline: none;
+            -webkit-appearance: none;
+        }
+        
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 24px;
+            height: 24px;
+            background: #141414;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+        
+        /* ガチャボタン（600x160px）- Figma準拠 */
+        .gacha-button {
+            width: 600px;
+            height: 160px;
+            background: #D9D9D9;
+            border: 5px solid #575757;
+            border-radius: 100px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Zen Kaku Gothic New', sans-serif;
+            font-size: 36px;
+            font-weight: 700;
+            color: #323232;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-bottom: 80px;
+            text-decoration: none;
+        }
+        
+        .gacha-button:hover {
+            background: #CCCCCC;
+            transform: scale(1.02);
+        }
+        
+        /* 情報ボタン（100x28px） */
+        .info-buttons {
+            display: flex;
+            gap: 20px;
+        }
+        
+        .info-btn {
+            width: 100px;
+            height: 28px;
+            background: #D9D9D9;
+            border: none;
+            font-family: 'Zen Kaku Gothic New', sans-serif;
+            font-size: 12px;
+            font-weight: 400;
+            color: #000000;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        .info-btn:hover {
+            background: #CCCCCC;
+        }
+        
+        /* ===== 結果画面 ===== */
+        .result-container {
+            width: 100%;
+            min-height: 100vh;
+            position: relative;
+            padding: 76px 126px;
+        }
+        
+        .result-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 40px;
+        }
+        
+        .nav-btn {
+            font-family: 'Roboto', sans-serif;
+            font-weight: 600;
+            font-size: 48px;
+            color: #000000;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            text-decoration: none;
+            transition: opacity 0.2s;
+            line-height: 1;
+        }
+        
+        .nav-btn:hover {
+            opacity: 0.7;
+        }
+        
+        /* カードグリッド（5列、gap 40px）*/
+        .card-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 111px);
+            gap: 40px;
+            justify-content: center;
+            margin: 40px auto;
+        }
+        
+        /* ランクカード（111x148px）*/
+        .rank-card {
+            width: 111px;
+            height: 148px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Roboto', sans-serif;
+            font-weight: 600;
+            font-size: 48px;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            text-decoration: none;
+        }
+        
+        .rank-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+        }
+        
+        .rank-ss {
+            background: linear-gradient(135deg, #080808 0%, #6E6E6E 100%);
+            color: #D8D8D8;
+        }
+        
+        .rank-s {
+            background: linear-gradient(135deg, #292929 0%, #8F8F8F 100%);
+            color: #000000;
+        }
+        
+        .rank-other {
+            background: #D9D9D9;
+            color: #000000;
+        }
+        
+        /* カウンター */
+        .counter {
+            position: fixed;
+            bottom: 112px;
+            right: 117px;
+            font-family: 'Roboto', sans-serif;
+            font-weight: 600;
+            font-size: 20px;
+            color: #000000;
+        }
+        
+        /* ===== 詳細画面 ===== */
+        .detail-container {
+            width: 100%;
+            min-height: 100vh;
+            padding: 44px 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            position: relative;
+        }
+        
+        .close-btn {
+            position: absolute;
+            top: 44px;
+            left: 40px;
+            font-family: 'Roboto', sans-serif;
+            font-weight: 600;
+            font-size: 48px;
+            color: #000000;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            text-decoration: none;
+            line-height: 1;
+            z-index: 10;
+        }
+        
+        .close-btn:hover {
+            opacity: 0.7;
+        }
+        
+        /* 詳細カード（1040x720px, 角丸48px）*/
+        .detail-card {
+            background: #D9D9D9;
+            border-radius: 48px;
+            padding: 68px 50px 60px 50px;
+            width: 100%;
+            max-width: 1040px;
+            min-height: 720px;
+            position: relative;
+            margin-top: 60px;
+        }
+        
+        /* 人生ストーリー */
+        .life-story {
+            font-family: 'Zen Old Mincho', serif;
+            font-weight: 700;
+            font-size: 24px;
+            line-height: 2em;
+            color: #323232;
+            text-align: center;
+            white-space: pre-wrap;
+            max-width: 720px;
+            margin: 0 auto 40px auto;
+        }
+        
+        /* ランク表示（360x128px）*/
+        .rank-display {
+            width: 360px;
+            height: 128px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 20px;
+            margin: 0 auto 30px auto;
+        }
+        
+        .rank-display-ss {
+            background: linear-gradient(135deg, #080808 0%, #6E6E6E 100%);
+        }
+        
+        .rank-display-s {
+            background: linear-gradient(135deg, #292929 0%, #8F8F8F 100%);
+        }
+        
+        .rank-display-other {
+            background: #C0C0C0;
+        }
+        
+        .rank-label {
+            font-family: 'Zen Old Mincho', serif;
+            font-weight: 700;
+            font-size: 36px;
+        }
+        
+        .rank-value {
+            font-family: 'Roboto', sans-serif;
+            font-weight: 600;
+            font-size: 64px;
+        }
+        
+        /* 親ガチャランク */
+        .parent-rank {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .parent-rank-label {
+            font-family: 'Zen Old Mincho', serif;
+            font-weight: 700;
+            font-size: 24px;
+            color: #323232;
+        }
+        
+        .parent-rank-value {
+            font-family: 'Roboto', sans-serif;
+            font-weight: 600;
+            font-size: 40px;
+            color: #000000;
+            margin-left: 16px;
+        }
+        
+        /* 展開ボタン */
+        .expand-btn {
+            display: block;
+            margin: 20px auto;
+            background: transparent;
+            border: none;
+            font-size: 32px;
+            cursor: pointer;
+            color: #323232;
+            padding: 8px 16px;
+        }
+        
+        .expand-btn:hover {
+            opacity: 0.7;
+        }
+        
+        /* スコアセクション */
+        .score-section {
+            margin-top: 30px;
+            border-top: 1px solid rgba(0,0,0,0.2);
+            padding-top: 30px;
+        }
+        
+        .score-title {
+            font-size: 24px;
+            font-weight: 700;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        
+        .section-title {
+            font-family: 'Zen Kaku Gothic New', sans-serif;
+            font-weight: 700;
+            font-size: 16px;
+            color: #323232;
+            margin: 24px 0 12px 0;
+        }
+        
+        .detail-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+            max-width: 720px;
+            margin: 0 auto;
+        }
+        
+        .detail-box {
+            padding: 16px;
+            background: rgba(255,255,255,0.5);
+            border-radius: 8px;
+        }
+        
+        .detail-box h4 {
+            font-size: 14px;
+            font-weight: 700;
+            margin-bottom: 12px;
+        }
+        
+        .detail-box p {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 4px;
+        }
+        
+        .detail-box strong {
+            color: #323232;
+        }
+        
+        /* モーダル */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .modal-overlay.active {
+            display: flex;
+        }
+        
+        .modal-content {
+            background: white;
+            border-radius: 16px;
+            padding: 32px;
+            max-width: 600px;
+            max-height: 85vh;
+            overflow-y: auto;
+        }
+        
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+        
+        .modal-title {
+            font-size: 24px;
+            font-weight: 700;
+        }
+        
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+        }
+        
+        .rate-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 16px;
+            margin: 8px 0;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border-left: 4px solid #666;
+        }
+        
+        .rate-rank {
+            width: 50px;
+            height: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            font-weight: 700;
+            border-radius: 8px;
+            margin-right: 16px;
+        }
+        
+        .rate-info {
+            flex: 1;
+        }
+        
+        .rate-label {
+            font-weight: 600;
+            font-size: 16px;
+        }
+        
+        .rate-desc {
+            font-size: 14px;
+            color: #666;
+        }
+        
+        .rate-value {
+            font-size: 24px;
+            font-weight: 700;
+        }
+        
+        /* レスポンシブ */
+        @media (max-width: 768px) {
+            .gacha-button {
+                width: 90%;
+                height: 120px;
+                font-size: 28px;
+            }
+            
+            .region-btn {
+                width: 45%;
+                height: 60px;
+                font-size: 18px;
+            }
+            
+            .slider-container {
+                width: 90%;
+            }
+            
+            .card-grid {
+                grid-template-columns: repeat(3, 100px);
+                gap: 20px;
+            }
+            
+            .rank-card {
+                width: 100px;
+                height: 133px;
+                font-size: 36px;
+            }
+            
+            .result-container {
+                padding: 40px 20px;
+            }
+            
+            .detail-card {
+                padding: 40px 20px;
+                border-radius: 24px;
+            }
+            
+            .life-story {
+                font-size: 18px;
+            }
+            
+            .detail-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    {% block content %}{% endblock %}
+    
+    {% block scripts %}{% endblock %}
+</body>
+</html>
