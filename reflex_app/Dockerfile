@@ -9,32 +9,24 @@ RUN apt-get update && apt-get install -y \
     npm \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Caddy
-RUN curl -fsSL https://github.com/caddyserver/caddy/releases/download/v2.8.4/caddy_2.8.4_linux_amd64.tar.gz | tar -xz -C /usr/local/bin
-
 # Set working directory
 WORKDIR /app
 
 # Copy requirements first for caching
 COPY requirements.txt .
-COPY ../requirements.txt ./parent_requirements.txt
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
-RUN pip install --no-cache-dir -r parent_requirements.txt || true
 
 # Copy application code
 COPY . .
 
-# Initialize and export Reflex app
+# Initialize Reflex (prepare .web directory)
 RUN reflex init
-RUN reflex export --no-zip
 
-# Copy Caddyfile
-COPY Caddyfile /etc/caddy/Caddyfile
+# Expose port (Railway uses PORT env variable)
+EXPOSE 8000
 
-# Expose port
-EXPOSE 8080
-
-# Start Caddy and Reflex backend
-CMD ["sh", "-c", "caddy start --config /etc/caddy/Caddyfile && reflex run --env prod --backend-only --loglevel warning"]
+# Start Reflex in production mode
+# API_URL will be set at runtime via environment variable
+CMD ["sh", "-c", "reflex run --env prod --loglevel warning"]
