@@ -1,0 +1,28 @@
+# Fly.io用 Reflex Dockerfile
+FROM python:3.11-slim
+
+# システム依存関係
+RUN apt-get update && apt-get install -y \
+    curl \
+    nodejs \
+    npm \
+    unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Python依存関係をインストール
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# アプリケーションをコピー
+COPY . .
+
+# Reflexを初期化
+RUN reflex init
+
+# ポート8080を公開
+EXPOSE 8080
+
+# 起動コマンド
+CMD ["reflex", "run", "--env", "prod", "--loglevel", "info"]
