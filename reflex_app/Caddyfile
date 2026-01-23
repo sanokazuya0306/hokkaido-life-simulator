@@ -1,7 +1,7 @@
 # Caddyfile for Reflex app
-:8080 {
+:{$PORT:8080} {
     # Serve static frontend
-    root * /app/.web/_static
+    root * .web/_static
     
     # Try files, then proxy to backend
     @backend {
