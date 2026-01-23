@@ -11,9 +11,10 @@ cmds = [
 
 [phases.build]
 cmds = [
+    "export API_URL=http://localhost:8000",
     "reflex init",
     "reflex export --no-zip"
 ]
 
 [start]
-cmd = "caddy start --config Caddyfile && reflex run --env prod --backend-only --loglevel warning"
+cmd = "chmod +x start.sh && ./start.sh"

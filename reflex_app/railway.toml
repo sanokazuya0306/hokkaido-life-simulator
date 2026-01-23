@@ -1,9 +1,8 @@
 [build]
-builder = "DOCKERFILE"
-dockerfilePath = "./Dockerfile"
+builder = "NIXPACKS"
+nixpacksConfigPath = "nixpacks.toml"
 
 [deploy]
-# startCommand is defined in Dockerfile CMD
 healthcheckPath = "/"
 healthcheckTimeout = 600
 restartPolicyType = "ON_FAILURE"
