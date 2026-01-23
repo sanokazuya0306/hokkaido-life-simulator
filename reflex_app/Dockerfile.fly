@@ -58,7 +58,7 @@ echo "Public URL: ${PUBLIC_URL}"\n\
 find /app/.web/_static -name "*.js" -type f -exec sed -i "s|http://localhost:8000|${PUBLIC_URL}|g" {} \\; 2>/dev/null || true\n\
 \n\
 echo "Starting Caddy on 0.0.0.0:8080..."\n\
-caddy start --config /app/Caddyfile.prod\n\
+caddy start --config /app/Caddyfile.prod --adapter caddyfile\n\
 \n\
 echo "Starting Reflex backend on 0.0.0.0:8000..."\n\
 exec reflex run --env prod --backend-only --loglevel info\n\
