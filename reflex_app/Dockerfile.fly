@@ -9,6 +9,9 @@ RUN apt-get update && apt-get install -y \
     unzip \
     && rm -rf /var/lib/apt/lists/*
 
+# Caddyをインストール
+RUN curl -fsSL https://github.com/caddyserver/caddy/releases/download/v2.8.4/caddy_2.8.4_linux_amd64.tar.gz | tar -xz -C /usr/local/bin
+
 WORKDIR /app
 
 # Python依存関係をインストール
@@ -18,11 +21,48 @@ RUN pip install --no-cache-dir -r requirements.txt
 # アプリケーションをコピー
 COPY . .
 
-# Reflexを初期化
-RUN reflex init
+# 環境変数を設定
+ENV API_URL=http://localhost:8000
+
+# Reflexを初期化してビルド（ここでNode.jsビルドを完了）
+RUN reflex init && reflex export --no-zip
 
 # ポート8080を公開
 EXPOSE 8080
 
+# Caddyfile用の設定（0.0.0.0でリッスン）
+RUN echo ':8080 {\n\
+    root * /app/.web/_static\n\
+    @backend {\n\
+        path /api/* /_upload /_event\n\
+    }\n\
+    reverse_proxy @backend localhost:8000\n\
+    file_server\n\
+    try_files {path} /index.html\n\
+}' > /app/Caddyfile.prod
+
+# 起動スクリプト
+RUN echo '#!/bin/bash\n\
+set -e\n\
+\n\
+# 公開URLを取得\n\
+if [ -n "$FLY_APP_NAME" ]; then\n\
+    PUBLIC_URL="https://${FLY_APP_NAME}.fly.dev"\n\
+else\n\
+    PUBLIC_URL="http://localhost:8080"\n\
+fi\n\
+\n\
+echo "Public URL: ${PUBLIC_URL}"\n\
+\n\
+# JSファイル内のURLを置換\n\
+find /app/.web/_static -name "*.js" -type f -exec sed -i "s|http://localhost:8000|${PUBLIC_URL}|g" {} \\; 2>/dev/null || true\n\
+\n\
+echo "Starting Caddy on 0.0.0.0:8080..."\n\
+caddy start --config /app/Caddyfile.prod\n\
+\n\
+echo "Starting Reflex backend on 0.0.0.0:8000..."\n\
+exec reflex run --env prod --backend-only --loglevel info\n\
+' > /app/start.sh && chmod +x /app/start.sh
+
 # 起動コマンド
-CMD ["reflex", "run", "--env", "prod", "--loglevel", "info"]
+CMD ["/app/start.sh"]
