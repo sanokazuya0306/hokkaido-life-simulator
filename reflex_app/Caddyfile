@@ -1,0 +1,17 @@
+# Caddyfile for Reflex app
+:8080 {
+    # Serve static frontend
+    root * /app/.web/_static
+    
+    # Try files, then proxy to backend
+    @backend {
+        path /api/* /_upload /_event
+    }
+    
+    reverse_proxy @backend localhost:8000
+    
+    file_server
+    
+    # Handle SPA routing
+    try_files {path} /index.html
+}

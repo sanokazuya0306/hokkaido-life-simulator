@@ -1,0 +1,9 @@
+# Reflex framework
+reflex>=0.4.0
+
+# Data processing (shared with core)
+pandas>=1.3.0
+plotly>=5.14.0
+
+# Additional dependencies
+httpx>=0.24.0
