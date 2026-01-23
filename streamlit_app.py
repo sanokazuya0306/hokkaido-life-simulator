@@ -1,7 +1,7 @@
 """
 人生ガチャ Streamlit版
 
-Reflex版からの移植: 既存のcore/とsrc/のロジックを再利用
+Reflex版からの移植: Figmaデザイン準拠
 """
 
 import streamlit as st
@@ -14,7 +14,6 @@ _project_root = Path(__file__).parent.resolve()
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
-# 環境変数でも設定（念のため）
 os.environ['PYTHONPATH'] = str(_project_root) + os.pathsep + os.environ.get('PYTHONPATH', '')
 
 from core import GachaService, get_gacha_service
@@ -31,7 +30,7 @@ st.set_page_config(
 )
 
 # ============================================
-# カスタムCSS
+# Figma準拠カスタムCSS
 # ============================================
 st.markdown("""
 <style>
@@ -40,59 +39,160 @@ st.markdown("""
     
     /* 全体スタイル */
     .stApp {
-        background-color: #FFFFFF;
-        font-family: 'Zen Kaku Gothic New', sans-serif;
+        background-color: #FFFFFF !important;
+        font-family: 'Zen Kaku Gothic New', sans-serif !important;
     }
     
-    /* ヘッダー非表示 */
-    header[data-testid="stHeader"] {
-        display: none;
-    }
+    /* Streamlitヘッダー・フッター非表示 */
+    header[data-testid="stHeader"] { display: none !important; }
+    footer { display: none !important; }
+    #MainMenu { display: none !important; }
+    .stDeployButton { display: none !important; }
     
     /* メインコンテンツ */
     .main .block-container {
-        padding-top: 2rem;
-        max-width: 1280px;
+        padding-top: 0 !important;
+        padding-bottom: 0 !important;
+        max-width: 100% !important;
     }
     
-    /* ガチャボタンスタイル */
+    /* Streamlitデフォルトボタンを非表示 */
+    .stButton > button {
+        display: none !important;
+    }
+    
+    /* ===== ガチャ画面 ===== */
+    .gacha-container {
+        width: 100%;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 40px 20px;
+    }
+    
+    /* 地域セレクタ - Figma準拠 */
+    .region-selector {
+        display: flex;
+        gap: 0;
+        margin-bottom: 60px;
+    }
+    .region-btn {
+        width: 300px;
+        height: 87px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: 'Zen Kaku Gothic New', sans-serif;
+        font-size: 24px;
+        font-weight: 400;
+        cursor: pointer;
+        transition: all 0.2s;
+        border: none;
+    }
+    .region-btn-left {
+        border-radius: 10px 0 0 10px;
+    }
+    .region-btn-right {
+        border-radius: 0 10px 10px 0;
+    }
+    .region-btn-active {
+        background: rgba(0, 0, 0, 0.1);
+        border: 1px solid rgba(0, 0, 0, 0.2);
+    }
+    .region-btn-inactive {
+        background: #D9D9D9;
+        border: 5px solid rgba(0, 0, 0, 0.2);
+    }
+    .region-btn:hover {
+        opacity: 0.8;
+    }
+    
+    /* スライダーコンテナ */
+    .slider-container {
+        width: 600px;
+        margin-bottom: 60px;
+    }
+    
+    /* ガチャボタン - Figma準拠（600x160px） */
     .gacha-button {
-        background-color: #D9D9D9;
+        width: 600px;
+        height: 160px;
+        background: #D9D9D9;
         border: 5px solid #575757;
         border-radius: 100px;
-        padding: 40px 80px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: 'Zen Kaku Gothic New', sans-serif;
         font-size: 36px;
         font-weight: 700;
         color: #323232;
         cursor: pointer;
         transition: all 0.2s;
-        font-family: 'Zen Kaku Gothic New', sans-serif;
+        margin-bottom: 80px;
     }
     .gacha-button:hover {
-        background-color: #CCCCCC;
+        background: #CCCCCC;
         transform: scale(1.02);
     }
     
-    /* 地域セレクタボタン */
-    .region-button {
-        height: 87px;
-        font-size: 24px;
-        font-weight: 400;
-        font-family: 'Zen Kaku Gothic New', sans-serif;
-        border: none;
-        cursor: pointer;
-        transition: all 0.2s;
+    /* 情報ボタン */
+    .info-buttons {
+        display: flex;
+        gap: 20px;
     }
-    .region-button.active {
-        background: rgba(0, 0, 0, 0.1);
-        border: 1px solid rgba(0, 0, 0, 0.2);
-    }
-    .region-button.inactive {
+    .info-btn {
+        width: 100px;
+        height: 28px;
         background: #D9D9D9;
-        border: 5px solid rgba(0, 0, 0, 0.2);
+        border: none;
+        font-family: 'Zen Kaku Gothic New', sans-serif;
+        font-size: 12px;
+        font-weight: 400;
+        color: #000000;
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+    .info-btn:hover {
+        background: #CCCCCC;
     }
     
-    /* ランクカードスタイル */
+    /* ===== 結果画面 ===== */
+    .result-container {
+        width: 100%;
+        min-height: 100vh;
+        position: relative;
+        padding: 76px 126px;
+    }
+    
+    /* ナビボタン */
+    .nav-btn {
+        font-family: 'Roboto', sans-serif;
+        font-weight: 600;
+        font-size: 48px;
+        color: #000000;
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        transition: opacity 0.2s;
+        line-height: 1;
+    }
+    .nav-btn:hover {
+        opacity: 0.7;
+    }
+    
+    /* カードグリッド - Figma準拠（5列、gap 40px） */
+    .card-grid {
+        display: grid;
+        grid-template-columns: repeat(5, 111px);
+        gap: 40px;
+        justify-content: center;
+        margin: 40px auto;
+    }
+    
+    /* ランクカード - Figma準拠（111x148px） */
     .rank-card {
         width: 111px;
         height: 148px;
@@ -105,36 +205,70 @@ st.markdown("""
         font-size: 48px;
         cursor: pointer;
         transition: transform 0.2s, box-shadow 0.2s;
-        margin: 8px;
     }
     .rank-card:hover {
         transform: translateY(-4px);
         box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
     }
-    .rank-card-ss {
+    .rank-ss {
         background: linear-gradient(135deg, #080808 0%, #6E6E6E 100%);
         color: #D8D8D8;
     }
-    .rank-card-s {
+    .rank-s {
         background: linear-gradient(135deg, #292929 0%, #8F8F8F 100%);
         color: #000000;
     }
-    .rank-card-normal {
+    .rank-other {
         background: #D9D9D9;
         color: #000000;
     }
     
-    /* 詳細カード */
+    /* カウンター */
+    .counter {
+        position: fixed;
+        bottom: 112px;
+        right: 117px;
+        font-family: 'Roboto', sans-serif;
+        font-weight: 600;
+        font-size: 20px;
+        color: #000000;
+    }
+    
+    /* ===== 詳細画面 ===== */
+    .detail-container {
+        width: 100%;
+        min-height: 100vh;
+        padding: 44px 20px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+    }
+    
+    /* 詳細カード - Figma準拠（1040x720px, 角丸48px） */
     .detail-card {
         background: #D9D9D9;
         border-radius: 48px;
-        padding: 68px 50px 40px 50px;
+        padding: 68px 50px 60px 50px;
+        width: 100%;
         max-width: 1040px;
         min-height: 720px;
-        margin: 0 auto;
+        position: relative;
     }
     
-    /* 人生ランク表示 */
+    /* 人生ストーリー - Figma準拠 */
+    .life-story {
+        font-family: 'Zen Old Mincho', serif;
+        font-weight: 700;
+        font-size: 24px;
+        line-height: 2em;
+        color: #323232;
+        text-align: center;
+        white-space: pre-wrap;
+        max-width: 720px;
+        margin: 0 auto 40px auto;
+    }
+    
+    /* ランク表示 - Figma準拠（360x128px） */
     .rank-display {
         width: 360px;
         height: 128px;
@@ -143,7 +277,7 @@ st.markdown("""
         align-items: center;
         justify-content: center;
         gap: 20px;
-        margin: 20px auto;
+        margin: 0 auto 30px auto;
     }
     .rank-display-ss {
         background: linear-gradient(135deg, #080808 0%, #6E6E6E 100%);
@@ -154,65 +288,84 @@ st.markdown("""
     .rank-display-other {
         background: #C0C0C0;
     }
+    .rank-label {
+        font-family: 'Zen Old Mincho', serif;
+        font-weight: 700;
+        font-size: 36px;
+    }
+    .rank-value {
+        font-family: 'Roboto', sans-serif;
+        font-weight: 600;
+        font-size: 64px;
+    }
     
-    /* 人生ストーリーテキスト */
-    .life-story {
+    /* 親ガチャランク */
+    .parent-rank {
+        text-align: center;
+        margin-bottom: 20px;
+    }
+    .parent-rank-label {
         font-family: 'Zen Old Mincho', serif;
         font-weight: 700;
         font-size: 24px;
-        line-height: 2em;
         color: #323232;
-        text-align: center;
-        white-space: pre-wrap;
-        max-width: 720px;
-        margin: 0 auto;
     }
-    
-    /* カウンター */
-    .counter {
-        position: fixed;
-        bottom: 20px;
-        right: 40px;
+    .parent-rank-value {
         font-family: 'Roboto', sans-serif;
         font-weight: 600;
-        font-size: 20px;
+        font-size: 40px;
         color: #000000;
+        margin-left: 16px;
     }
     
-    /* 情報ボタン */
-    .info-button {
-        background: #D9D9D9;
+    /* 展開ボタン */
+    .expand-btn {
+        position: absolute;
+        bottom: 24px;
+        right: 40px;
+        background: transparent;
         border: none;
-        padding: 8px 16px;
-        font-size: 12px;
+        font-size: 32px;
         cursor: pointer;
-        transition: background 0.2s;
+        color: #323232;
+        padding: 8px;
     }
-    .info-button:hover {
-        background: #CCCCCC;
+    .expand-btn:hover {
+        opacity: 0.7;
     }
     
-    /* スコアカード */
-    .score-card {
+    /* スコアセクション */
+    .score-section {
         padding: 16px;
         background: rgba(255,255,255,0.5);
         border-radius: 8px;
         margin: 8px;
     }
-    
-    /* ダイアログスタイル */
-    .rate-item {
-        padding: 12px 16px;
-        margin: 8px 0;
-        background: #ffffff;
-        border: 1px solid #e0e0e0;
-        border-radius: 8px;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    .section-title {
+        font-family: 'Zen Kaku Gothic New', sans-serif;
+        font-weight: 700;
+        font-size: 16px;
+        color: #323232;
+        margin: 16px 0 12px 0;
     }
     
-    /* Streamlitのデフォルトスタイルを上書き */
-    .stButton > button {
-        font-family: 'Zen Kaku Gothic New', sans-serif;
+    /* 閉じるボタン */
+    .close-btn {
+        position: absolute;
+        top: 44px;
+        left: 40px;
+        font-family: 'Roboto', sans-serif;
+        font-weight: 600;
+        font-size: 48px;
+        color: #000000;
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        line-height: 1;
+        z-index: 10;
+    }
+    .close-btn:hover {
+        opacity: 0.7;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -238,15 +391,15 @@ if 'show_detail_breakdown' not in st.session_state:
     st.session_state.show_detail_breakdown = False
 
 # ============================================
-# ランク情報
+# 定数
 # ============================================
 RANK_INFO = {
-    "SS": {"color": "#1a1a1a", "bg": "rgba(26, 26, 26, 0.08)", "label": "超大当たり", "desc": "上位2-5%、高学歴・高収入・長寿"},
-    "S": {"color": "#333333", "bg": "rgba(51, 51, 51, 0.08)", "label": "大当たり", "desc": "上位10-20%、好条件の人生"},
-    "A": {"color": "#4d4d4d", "bg": "rgba(77, 77, 77, 0.08)", "label": "当たり", "desc": "平均以上の人生"},
-    "B": {"color": "#666666", "bg": "rgba(102, 102, 102, 0.08)", "label": "普通", "desc": "一般的な人生"},
-    "C": {"color": "#808080", "bg": "rgba(128, 128, 128, 0.08)", "label": "ハズレ", "desc": "平均以下の人生"},
-    "D": {"color": "#999999", "bg": "rgba(153, 153, 153, 0.08)", "label": "大ハズレ", "desc": "早逝など不運な人生"},
+    "SS": {"color": "#1a1a1a", "label": "超大当たり", "desc": "上位2-5%、高学歴・高収入・長寿"},
+    "S": {"color": "#333333", "label": "大当たり", "desc": "上位10-20%、好条件の人生"},
+    "A": {"color": "#4d4d4d", "label": "当たり", "desc": "平均以上の人生"},
+    "B": {"color": "#666666", "label": "普通", "desc": "一般的な人生"},
+    "C": {"color": "#808080", "label": "ハズレ", "desc": "平均以下の人生"},
+    "D": {"color": "#999999", "label": "大ハズレ", "desc": "早逝など不運な人生"},
 }
 
 GACHA_RATES = {
@@ -258,26 +411,9 @@ GACHA_RATES = {
 # ヘルパー関数
 # ============================================
 def get_service():
-    """GachaServiceのインスタンスを取得"""
     return get_gacha_service(st.session_state.region)
 
-def generate_life_story(life: dict, service: GachaService) -> str:
-    """人生ストーリーを生成"""
-    return service._generate_life_story(life)
-
-def get_rank_card_html(rank: str, index: int) -> str:
-    """ランクカードのHTMLを生成"""
-    if rank == "SS":
-        css_class = "rank-card rank-card-ss"
-    elif rank == "S":
-        css_class = "rank-card rank-card-s"
-    else:
-        css_class = "rank-card rank-card-normal"
-    
-    return f'<div class="{css_class}">{rank}</div>'
-
 def format_education_display(education: str) -> str:
-    """学歴を表示用にフォーマット"""
     if not education or education == "不明":
         return "不明"
     education = str(education).strip()
@@ -297,49 +433,60 @@ def format_education_display(education: str) -> str:
 # ガチャ画面
 # ============================================
 def gacha_view():
-    """ガチャ画面"""
-    st.markdown("<br>" * 2, unsafe_allow_html=True)
-    
     # 地域選択
-    col1, col2, col3 = st.columns([1, 2, 1])
+    region = st.session_state.region
+    hokkaido_class = "region-btn region-btn-left region-btn-active" if region == "hokkaido" else "region-btn region-btn-left region-btn-inactive"
+    tokyo_class = "region-btn region-btn-right region-btn-active" if region == "tokyo" else "region-btn region-btn-right region-btn-inactive"
+    
+    st.markdown(f"""
+    <div class="gacha-container">
+        <div class="region-selector">
+            <button class="{hokkaido_class}" onclick="window.location.href='?region=hokkaido'">北海道</button>
+            <button class="{tokyo_class}" onclick="window.location.href='?region=tokyo'">東京</button>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Streamlitボタンで地域切り替え
+    col1, col2, col3 = st.columns([2, 3, 2])
     with col2:
-        region_col1, region_col2 = st.columns(2)
-        with region_col1:
-            hokkaido_style = "background: rgba(0,0,0,0.1); border: 1px solid rgba(0,0,0,0.2);" if st.session_state.region == "hokkaido" else "background: #D9D9D9; border: 5px solid rgba(0,0,0,0.2);"
-            if st.button("北海道", key="hokkaido_btn", use_container_width=True):
+        subcol1, subcol2 = st.columns(2)
+        with subcol1:
+            if st.button("北海道", key="hokkaido_btn", use_container_width=True, 
+                        type="primary" if region == "hokkaido" else "secondary"):
                 st.session_state.region = "hokkaido"
                 st.rerun()
-        with region_col2:
-            tokyo_style = "background: rgba(0,0,0,0.1); border: 1px solid rgba(0,0,0,0.2);" if st.session_state.region == "tokyo" else "background: #D9D9D9; border: 5px solid rgba(0,0,0,0.2);"
-            if st.button("東京", key="tokyo_btn", use_container_width=True):
+        with subcol2:
+            if st.button("東京", key="tokyo_btn", use_container_width=True,
+                        type="primary" if region == "tokyo" else "secondary"):
                 st.session_state.region = "tokyo"
                 st.rerun()
     
-    st.markdown("<br>" * 2, unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
     
     # スライダー
-    col1, col2, col3 = st.columns([1, 2, 1])
+    col1, col2, col3 = st.columns([2, 3, 2])
     with col2:
         st.session_state.num_people = st.slider(
-            "人数",
+            "人数を選択",
             min_value=1,
             max_value=20,
             value=st.session_state.num_people,
             key="people_slider"
         )
     
-    st.markdown("<br>" * 2, unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
     
-    # ガチャボタン
-    col1, col2, col3 = st.columns([1, 2, 1])
+    # ガチャボタン（HTMLで大きなボタン風）
+    col1, col2, col3 = st.columns([2, 3, 2])
     with col2:
-        if st.button("ガチャを引く", key="gacha_btn", use_container_width=True, type="primary"):
+        if st.button("🎲 ガチャを引く", key="gacha_btn", use_container_width=True, type="primary"):
             pull_gacha()
     
-    st.markdown("<br>" * 4, unsafe_allow_html=True)
+    st.markdown("<br><br>", unsafe_allow_html=True)
     
     # 情報ボタン
-    col1, col2, col3, col4, col5 = st.columns([1, 1, 1, 1, 1])
+    col1, col2, col3, col4, col5 = st.columns([2, 1, 1, 1, 2])
     with col2:
         if st.button("確率", key="rates_btn"):
             show_rates_dialog()
@@ -351,9 +498,7 @@ def gacha_view():
             show_dataset_dialog()
 
 def pull_gacha():
-    """ガチャを引く"""
     service = get_service()
-    
     st.session_state.lives = []
     st.session_state.score_results = []
     
@@ -371,23 +516,41 @@ def pull_gacha():
 # 結果一覧画面
 # ============================================
 def result_view():
-    """結果一覧画面"""
-    # ヘッダー
-    col1, col2, col3 = st.columns([1, 6, 1])
+    # ヘッダー（戻る・再生成）
+    col1, col2, col3 = st.columns([1, 8, 1])
     with col1:
-        if st.button("←", key="back_btn"):
+        if st.button("← 戻る", key="back_btn"):
             st.session_state.view_mode = "gacha"
             st.rerun()
     with col3:
-        if st.button("↺", key="refresh_btn"):
+        if st.button("↺ 再生成", key="refresh_btn"):
             pull_gacha()
     
     st.markdown("<br>", unsafe_allow_html=True)
     
-    # カードグリッド（5列）
+    # カードグリッド（HTMLで表示）
     if st.session_state.score_results:
+        cards_html = '<div class="card-grid">'
+        for idx, result in enumerate(st.session_state.score_results):
+            rank = result.get("rank", "B")
+            if rank == "SS":
+                rank_class = "rank-ss"
+            elif rank == "S":
+                rank_class = "rank-s"
+            else:
+                rank_class = "rank-other"
+            
+            cards_html += f'<div class="rank-card {rank_class}" data-index="{idx}">{rank}</div>'
+        cards_html += '</div>'
+        
+        st.markdown(cards_html, unsafe_allow_html=True)
+        
+        # Streamlitボタンで詳細画面へ
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("**カードをクリックして詳細を表示:**")
+        
         num_results = len(st.session_state.score_results)
-        rows = (num_results + 4) // 5  # 5列で割って行数を計算
+        rows = (num_results + 4) // 5
         
         for row in range(rows):
             cols = st.columns(5)
@@ -396,47 +559,19 @@ def result_view():
                 if card_idx < num_results:
                     rank = st.session_state.score_results[card_idx].get("rank", "B")
                     with cols[col_idx]:
-                        # ランクカード表示
-                        if rank == "SS":
-                            bg_style = "background: linear-gradient(135deg, #080808 0%, #6E6E6E 100%); color: #D8D8D8;"
-                        elif rank == "S":
-                            bg_style = "background: linear-gradient(135deg, #292929 0%, #8F8F8F 100%); color: #000000;"
-                        else:
-                            bg_style = "background: #D9D9D9; color: #000000;"
-                        
-                        st.markdown(f"""
-                        <div style="
-                            width: 111px;
-                            height: 148px;
-                            border-radius: 8px;
-                            display: flex;
-                            align-items: center;
-                            justify-content: center;
-                            font-family: 'Roboto', sans-serif;
-                            font-weight: 600;
-                            font-size: 48px;
-                            margin: 8px auto;
-                            {bg_style}
-                        ">{rank}</div>
-                        """, unsafe_allow_html=True)
-                        
-                        # 詳細ボタン
-                        if st.button("詳細", key=f"detail_btn_{card_idx}", use_container_width=True):
+                        if st.button(f"{rank}", key=f"detail_{card_idx}", use_container_width=True):
                             st.session_state.selected_life_index = card_idx
                             st.session_state.view_mode = "detail"
                             st.session_state.show_detail_breakdown = False
                             st.rerun()
     
     # カウンター
-    st.markdown(f"""
-    <div class="counter">{st.session_state.total_generated}</div>
-    """, unsafe_allow_html=True)
+    st.markdown(f'<div class="counter">{st.session_state.total_generated}</div>', unsafe_allow_html=True)
 
 # ============================================
 # 詳細画面
 # ============================================
 def detail_view():
-    """詳細画面"""
     if st.session_state.selected_life_index < 0:
         st.session_state.view_mode = "result"
         st.rerun()
@@ -447,87 +582,68 @@ def detail_view():
     score_result = st.session_state.score_results[st.session_state.selected_life_index]
     
     # 閉じるボタン
-    col1, col2 = st.columns([1, 11])
-    with col1:
-        if st.button("×", key="close_btn"):
-            st.session_state.view_mode = "result"
-            st.rerun()
-    
-    # 詳細カード
-    st.markdown('<div class="detail-card">', unsafe_allow_html=True)
+    if st.button("× 閉じる", key="close_btn"):
+        st.session_state.view_mode = "result"
+        st.rerun()
     
     # 人生ストーリー
-    life_story = generate_life_story(life, service)
-    st.markdown(f'<div class="life-story">{life_story}</div>', unsafe_allow_html=True)
+    life_story = service._generate_life_story(life)
     
-    st.markdown("<br><br>", unsafe_allow_html=True)
-    
-    # 人生ランク表示
+    # ランク情報
     rank = score_result.get("rank", "B")
     total_score = int(score_result.get("total_score", 0))
     rank_label = score_result.get("rank_label", "")
     
     if rank == "SS":
-        rank_bg = "linear-gradient(135deg, #080808 0%, #6E6E6E 100%)"
+        rank_display_class = "rank-display rank-display-ss"
         rank_color = "#D8D8D8"
     elif rank == "S":
-        rank_bg = "linear-gradient(135deg, #292929 0%, #8F8F8F 100%)"
+        rank_display_class = "rank-display rank-display-s"
         rank_color = "#000000"
     else:
-        rank_bg = "#C0C0C0"
+        rank_display_class = "rank-display rank-display-other"
         rank_color = "#000000"
     
-    st.markdown(f"""
-    <div style="
-        width: 360px;
-        height: 128px;
-        border-radius: 8px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 20px;
-        margin: 20px auto;
-        background: {rank_bg};
-    ">
-        <span style="font-family: 'Zen Old Mincho', serif; font-weight: 700; font-size: 36px; color: {rank_color};">人生ランク</span>
-        <span style="font-family: 'Roboto', sans-serif; font-weight: 600; font-size: 64px; color: {rank_color};">{rank}</span>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # 親ガチャランク
+    # 親ガチャ
     parent_result = service.simulator.calculate_parent_gacha_score(life)
     parent_rank = parent_result.get("rank", "B")
     
+    # 詳細カードHTML
     st.markdown(f"""
-    <div style="text-align: center; margin: 20px 0;">
-        <span style="font-family: 'Zen Old Mincho', serif; font-weight: 700; font-size: 24px; color: #323232;">親ガチャランク</span>
-        <span style="font-family: 'Roboto', sans-serif; font-weight: 600; font-size: 40px; color: #000000; margin-left: 16px;">{parent_rank}</span>
+    <div class="detail-card">
+        <div class="life-story">{life_story}</div>
+        
+        <div class="{rank_display_class}">
+            <span class="rank-label" style="color: {rank_color};">人生ランク</span>
+            <span class="rank-value" style="color: {rank_color};">{rank}</span>
+        </div>
+        
+        <div class="parent-rank">
+            <span class="parent-rank-label">親ガチャランク</span>
+            <span class="parent-rank-value">{parent_rank}</span>
+        </div>
     </div>
     """, unsafe_allow_html=True)
     
     # 展開ボタン
-    if st.button("↓ 詳細を展開" if not st.session_state.show_detail_breakdown else "↑ 閉じる", key="expand_btn"):
+    expand_label = "↑ 閉じる" if st.session_state.show_detail_breakdown else "↓ 詳細を展開"
+    if st.button(expand_label, key="expand_btn"):
         st.session_state.show_detail_breakdown = not st.session_state.show_detail_breakdown
         st.rerun()
     
-    # 詳細展開時
+    # 詳細展開
     if st.session_state.show_detail_breakdown:
-        show_detail_breakdown(life, score_result, parent_result, service)
-    
-    st.markdown('</div>', unsafe_allow_html=True)
+        show_detail_breakdown(life, score_result, parent_result)
 
-def show_detail_breakdown(life: dict, score_result: dict, parent_result: dict, service):
-    """詳細データの展開表示"""
+def show_detail_breakdown(life: dict, score_result: dict, parent_result: dict):
     st.markdown("---")
     
-    # 総合スコア
     total_score = int(score_result.get("total_score", 0))
     rank_label = score_result.get("rank_label", "")
     st.markdown(f"### {total_score}点「{rank_label}」")
     
     # 詳細データ
     st.markdown("#### 📋 詳細データ")
-    
     col1, col2, col3 = st.columns(3)
     
     with col1:
@@ -558,8 +674,8 @@ def show_detail_breakdown(life: dict, score_result: dict, parent_result: dict, s
             st.write("高校: 進学せず")
         
         graduation_deviation = life.get('graduation_deviation', 0)
-        if graduation_deviation:
-            growth = graduation_deviation - deviation_value if deviation_value else 0
+        if graduation_deviation and deviation_value:
+            growth = graduation_deviation - deviation_value
             growth_str = f"+{growth:.1f}" if growth >= 0 else f"{growth:.1f}"
             st.write(f"卒業時偏差値: {graduation_deviation:.1f} ({growth_str})")
         
@@ -567,9 +683,8 @@ def show_detail_breakdown(life: dict, score_result: dict, parent_result: dict, s
             uni_name = life.get('university_name', '')
             if isinstance(uni_name, dict):
                 uni_name = uni_name.get('name', '')
-            uni_rank = life.get('university_rank', '')
             st.write(f"大学: {uni_name}")
-            st.write(f"大学ランク: {uni_rank}")
+            st.write(f"大学ランク: {life.get('university_rank', '')}")
         else:
             st.write("大学: 進学せず")
     
@@ -578,15 +693,13 @@ def show_detail_breakdown(life: dict, score_result: dict, parent_result: dict, s
         st.write(f"企業規模: {life.get('company_size', '不明')}")
         st.write(f"雇用形態: {life.get('employment_type', '不明')}")
         career_summary = life.get('career_summary', {})
-        job_changes = career_summary.get('total_job_changes', 0)
-        st.write(f"転職回数: {job_changes}回")
+        st.write(f"転職回数: {career_summary.get('total_job_changes', 0)}回")
         st.write(f"死亡年齢: {life.get('death_age', 0)}歳")
         st.write(f"死因: {life.get('death_cause', '不明')}")
     
     # 人生スコア内訳
     st.markdown("#### 📈 人生スコア内訳")
     breakdown = score_result.get('breakdown', {})
-    
     col1, col2, col3 = st.columns(3)
     
     with col1:
@@ -614,7 +727,6 @@ def show_detail_breakdown(life: dict, score_result: dict, parent_result: dict, s
     st.markdown(f"**親ガチャ: {parent_total}点「{parent_rank_label}」**")
     
     p_breakdown = parent_result.get('breakdown', {})
-    
     col1, col2, col3 = st.columns(3)
     
     with col1:
@@ -640,7 +752,6 @@ def show_detail_breakdown(life: dict, score_result: dict, parent_result: dict, s
 # ============================================
 @st.dialog("🎲 ガチャ確率")
 def show_rates_dialog():
-    """確率ダイアログ"""
     region_name = "北海道" if st.session_state.region == "hokkaido" else "東京"
     rates = GACHA_RATES[st.session_state.region]
     
@@ -657,18 +768,14 @@ def show_rates_dialog():
         with col3:
             st.write(f"**{rate}**")
     
-    st.markdown("---")
-    st.caption("確率は実際のシミュレーション結果（2026年1月計算、新配分: 寿命40%・生涯年収35%・学歴25%）に基づいています。")
+    st.caption("確率は2026年1月計算（寿命40%・生涯年収35%・学歴25%）に基づきます。")
 
 @st.dialog("📊 相関図", width="large")
 def show_correlation_dialog():
-    """相関図ダイアログ"""
     try:
         fig = create_correlation_sankey()
         st.plotly_chart(fig, use_container_width=True)
-        
         summary = get_correlation_summary()
-        st.markdown("### サマリー")
         col1, col2, col3 = st.columns(3)
         with col1:
             st.metric("ノード数", summary.get('nodes', 0))
@@ -677,17 +784,11 @@ def show_correlation_dialog():
         with col3:
             st.metric("カテゴリ数", summary.get('categories', 0))
     except Exception as e:
-        st.error(f"相関図の表示中にエラーが発生しました: {e}")
+        st.error(f"相関図エラー: {e}")
 
 @st.dialog("📋 データセット", width="large")
 def show_dataset_dialog():
-    """データセットダイアログ"""
-    service = get_service()
-    
-    st.markdown("### 使用しているデータセット")
-    st.markdown("---")
-    
-    # データセット情報（簡略版）
+    st.markdown("### 使用データセット")
     datasets = [
         {"name": "市区町村別出生数", "source": "厚生労働省", "year": "2024年", "icon": "📍"},
         {"name": "世帯年収分布", "source": "総務省統計局", "year": "2023年", "icon": "💰"},
@@ -698,21 +799,13 @@ def show_dataset_dialog():
         {"name": "年齢別死亡率", "source": "厚生労働省", "year": "2023年", "icon": "📈"},
         {"name": "死因統計", "source": "厚生労働省", "year": "2022年", "icon": "🏥"},
     ]
-    
     for ds in datasets:
-        col1, col2, col3 = st.columns([1, 4, 2])
-        with col1:
-            st.write(ds["icon"])
-        with col2:
-            st.write(f"**{ds['name']}**")
-        with col3:
-            st.write(f"{ds['source']} ({ds['year']})")
+        st.write(f"{ds['icon']} **{ds['name']}** - {ds['source']} ({ds['year']})")
 
 # ============================================
-# メインルーティング
+# メイン
 # ============================================
 def main():
-    """メインアプリケーション"""
     if st.session_state.view_mode == "gacha":
         gacha_view()
     elif st.session_state.view_mode == "result":
