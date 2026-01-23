@@ -54,8 +54,9 @@ fi\n\
 \n\
 echo "Public URL: ${PUBLIC_URL}"\n\
 \n\
-# JSファイル内のURLを置換\n\
+# JSファイル内のURLを置換（http:// と ws:// の両方）\n\
 find /app/.web/build/client -name "*.js" -type f -exec sed -i "s|http://localhost:8000|${PUBLIC_URL}|g" {} \\; 2>/dev/null || true\n\
+find /app/.web/build/client -name "*.js" -type f -exec sed -i "s|ws://localhost:8000|wss://${FLY_APP_NAME}.fly.dev|g" {} \\; 2>/dev/null || true\n\
 \n\
 echo "Starting Caddy on 0.0.0.0:8080..."\n\
 caddy start --config /app/Caddyfile.prod --adapter caddyfile\n\
