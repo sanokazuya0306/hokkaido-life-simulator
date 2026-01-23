@@ -4,16 +4,17 @@ import reflex as rx
 import os
 
 
-# API URL: ビルド時は localhost、実行時はCaddyがプロキシ
-# 環境変数で上書き可能
-api_url = os.getenv("API_URL", "http://localhost:8000")
+# Railway/Render用: 環境変数からポートを取得
+port = int(os.getenv("PORT", "3000"))
 
 config = rx.Config(
     app_name="reflex_app",
     title="人生ガチャ",
     description="北海道・東京の人生シミュレーター",
-    show_built_with_reflex=False,  # セルフホスト時は常に非表示
-    api_url=api_url,
+    show_built_with_reflex=False,
+    # 単一ポートで動作させる
+    frontend_port=port,
+    backend_port=port,
     # Tailwind CSS有効化
     tailwind={
         "theme": {

@@ -1,22 +1,12 @@
 # Nixpacks configuration for Railway
-[variables]
-API_URL = "http://localhost:8000"
-
 [phases.setup]
 nixPkgs = ["nodejs-18_x", "python311"]
-aptPkgs = ["curl", "unzip"]
 
 [phases.install]
-cmds = [
-    "pip install -r requirements.txt",
-    "curl -fsSL https://github.com/caddyserver/caddy/releases/download/v2.8.4/caddy_2.8.4_linux_amd64.tar.gz | tar -xz -C /usr/local/bin"
-]
+cmds = ["pip install -r requirements.txt"]
 
 [phases.build]
-cmds = [
-    "reflex init",
-    "API_URL=http://localhost:8000 reflex export --no-zip"
-]
+cmds = ["reflex init"]
 
 [start]
-cmd = "bash start.sh"
+cmd = "reflex run --env prod --loglevel info"
