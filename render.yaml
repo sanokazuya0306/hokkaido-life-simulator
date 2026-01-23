@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: jinsei-gacha
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    rootDir: reflex_app
+    envVars:
+      - key: PORT
+        value: 10000
+    healthCheckPath: /
