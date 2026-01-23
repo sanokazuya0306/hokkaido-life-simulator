@@ -32,7 +32,7 @@ EXPOSE 8080
 
 # Caddyfile用の設定（0.0.0.0でリッスン）
 RUN echo ':8080 {\n\
-    root * /app/.web/_static\n\
+    root * /app/.web/build/client\n\
     @backend {\n\
         path /api/* /_upload /_event\n\
     }\n\
@@ -55,7 +55,7 @@ fi\n\
 echo "Public URL: ${PUBLIC_URL}"\n\
 \n\
 # JSファイル内のURLを置換\n\
-find /app/.web/_static -name "*.js" -type f -exec sed -i "s|http://localhost:8000|${PUBLIC_URL}|g" {} \\; 2>/dev/null || true\n\
+find /app/.web/build/client -name "*.js" -type f -exec sed -i "s|http://localhost:8000|${PUBLIC_URL}|g" {} \\; 2>/dev/null || true\n\
 \n\
 echo "Starting Caddy on 0.0.0.0:8080..."\n\
 caddy start --config /app/Caddyfile.prod --adapter caddyfile\n\
