@@ -3,8 +3,8 @@ builder = "DOCKERFILE"
 dockerfilePath = "./Dockerfile"
 
 [deploy]
-startCommand = "sh -c 'caddy start --config /etc/caddy/Caddyfile && reflex run --env prod --backend-only --loglevel warning'"
+# startCommand is defined in Dockerfile CMD
 healthcheckPath = "/"
-healthcheckTimeout = 300
+healthcheckTimeout = 600
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 10
