@@ -33,12 +33,32 @@ EXPOSE 8080
 # Caddyfile用の設定（0.0.0.0でリッスン）
 RUN echo ':8080 {\n\
     root * /app/.web/build/client\n\
-    @backend {\n\
-        path /api/* /_upload /_event\n\
+    \n\
+    # WebSocket and API endpoints\n\
+    handle /_event {\n\
+        reverse_proxy localhost:8000\n\
     }\n\
-    reverse_proxy @backend localhost:8000\n\
-    file_server\n\
-    try_files {path} /index.html\n\
+    handle /_event/* {\n\
+        reverse_proxy localhost:8000\n\
+    }\n\
+    handle /api/* {\n\
+        reverse_proxy localhost:8000\n\
+    }\n\
+    handle /_upload {\n\
+        reverse_proxy localhost:8000\n\
+    }\n\
+    handle /ping {\n\
+        reverse_proxy localhost:8000\n\
+    }\n\
+    handle /_health {\n\
+        reverse_proxy localhost:8000\n\
+    }\n\
+    \n\
+    # Static files\n\
+    handle {\n\
+        file_server\n\
+        try_files {path} /index.html\n\
+    }\n\
 }' > /app/Caddyfile.prod
 
 # 起動スクリプト
